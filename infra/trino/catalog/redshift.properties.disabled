@@ -1,0 +1,33 @@
+# =============================================================================
+# Trino Catalog: redshift
+# =============================================================================
+# FUTURE INTEGRATION — Amazon Redshift connector via JDBC.
+#
+# Before enabling:
+#   1. Replace `connection-url` with your actual Redshift cluster endpoint,
+#      port (default 5439), and database name.
+#   2. Replace `connection-user` and `connection-password` with a Redshift
+#      user that has SELECT privileges on the schemas you want to expose.
+#   3. Ensure the Trino coordinator can reach the Redshift cluster on port 5439
+#      (add the Trino container's outbound IP to the Redshift security group).
+#   4. Download the Amazon Redshift JDBC driver JAR (RedshiftJDBC42-*.jar) and
+#      place it in the Trino plugin directory:
+#        docker cp RedshiftJDBC42-2.1.0.28.jar datahub-trino:/usr/lib/trino/plugin/redshift/
+#      Then restart the Trino container.
+#
+# Usage from Trino CLI:
+#   SHOW SCHEMAS FROM redshift;
+#   SELECT * FROM redshift.public.dim_product LIMIT 10;
+# =============================================================================
+
+connector.name=redshift
+
+# REPLACE: actual Redshift cluster endpoint, database, and port
+connection-url=jdbc:redshift://your-cluster.redshift.amazonaws.com:5439/dev
+
+# REPLACE: Redshift database user with read access
+connection-user=redshift_user
+connection-password=redshift_password
+
+# Optional: enable predicate push-down to reduce data transfer
+redshift.query.push-down-enabled=true

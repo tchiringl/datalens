@@ -1,0 +1,91 @@
+# trino_service.yml
+# -----------------
+# OpenMetadata ingestion configuration for the Trino query engine.
+#
+# This file is used by:
+#   - `metadata ingest -c trino_service.yml`  (CLI / Docker entrypoint)
+#   - The om_ingestion_dag (triggered via API using the pipeline name below)
+#
+# Catalogs exposed through Trino:
+#   - postgres  (source: PostgreSQL retail DB)
+#   - iceberg   (source: Apache Iceberg on MinIO / S3)
+#   - bigquery  (future: BigQuery connector)
+#   - redshift  (future: Redshift connector)
+#
+# To regenerate the JWT token:
+#   curl -s -X POST http://openmetadata-server:8585/api/v1/users/login \
+#        -H 'Content-Type: application/json' \
+#        -d '{"email":"admin@open-metadata.org","password":"admin"}' \
+#        | jq -r '.accessToken'
+
+source:
+  type: trino
+  serviceName: trinodatahub
+  serviceConnection:
+    config:
+      type: Trino
+      # hostPort must be reachable from the container running this ingestion.
+      # Inside Docker Compose the service name resolves via Docker DNS.
+      hostPort: trino:8080
+      username: admin
+      # catalog is the *default* catalog; OM will also discover the others
+      # listed in databaseFilterPattern below.
+      catalog: iceberg
+      # Additional JDBC / connector parameters passed in the query string
+      params:
+        http_scheme: http
+        # Uncomment and set to true when running Trino behind a reverse proxy
+        # with TLS termination:
+        # verify: "false"
+
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      # Tables deleted from the source that are still in OM will be soft-deleted.
+      markDeletedTables: true
+      includeTables: true
+      includeViews: true
+      # Override table descriptions and column tags from the source if already
+      # set in OM (useful when bootstrapping; set to false to preserve manual edits).
+      overrideMetadata: false
+      # How many rows to use when computing table-level statistics during ingestion.
+      # Set to 0 to disable inline statistics (use the Profiler pipeline instead).
+      tableProfileSamplingCount: 0
+
+      databaseFilterPattern:
+        includes:
+          - postgres
+          - iceberg
+        # excludes:
+        #   - system
+        #   - information_schema
+        #   - tpcds
+        #   - tpch
+
+      schemaFilterPattern:
+        includes:
+          - ".*"
+        excludes:
+          - information_schema
+          - pg_catalog
+
+      tableFilterPattern:
+        # Uncomment to restrict to specific table prefixes:
+        # includes:
+        #   - ".*"
+        excludes:
+          # Internal dbt artefact tables stored in the dbt_tests schema
+          - "dbt_tests.*"
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
+      jwtToken: "your-jwt-token-here"

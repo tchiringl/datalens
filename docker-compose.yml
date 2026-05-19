@@ -1,0 +1,427 @@
+version: "3.8"
+
+# =============================================================================
+# DataHub Retail AI POC — Docker Compose
+# =============================================================================
+# Prerequisites: Docker Desktop 4.x+, 16 GB RAM allocated to Docker
+# Usage:
+#   cp .env.example .env   # fill in real secrets
+#   make up                # start all services
+#   make validate          # verify health endpoints
+# =============================================================================
+
+networks:
+  datahub-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  elasticsearch_data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 15 — backing store for Airflow metadata, Hive Metastore, and
+  # the retail operational database used in the POC queries.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    container_name: datahub-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible object store for the Iceberg data lake warehouse
+  # (warehouse bucket) and raw landing zone (raw bucket).
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: datahub-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # MinIO Init — one-shot container that creates the required buckets using the
+  # MinIO Client (mc). Runs once after MinIO is healthy, then exits.
+  # ---------------------------------------------------------------------------
+  minio-init:
+    image: minio/mc:latest
+    container_name: datahub-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set myminio http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+        mc mb myminio/warehouse --ignore-existing &&
+        mc mb myminio/raw --ignore-existing &&
+        echo 'MinIO buckets ready.'
+      "
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Hive Metastore — catalog service for Iceberg tables. Stores table metadata
+  # in PostgreSQL and resolves data file paths on MinIO S3.
+  # ---------------------------------------------------------------------------
+  hive-metastore:
+    image: bitsondatadev/hive-metastore:latest
+    container_name: datahub-hive-metastore
+    restart: unless-stopped
+    ports:
+      - "9083:9083"
+    environment:
+      METASTORE_DB_HOSTNAME: postgres
+      METASTORE_DB_PORT: 5432
+      METASTORE_DB_NAME: ${POSTGRES_DB}
+      METASTORE_DB_USER: ${POSTGRES_USER}
+      METASTORE_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Trino 426 — distributed SQL query engine. Federates across PostgreSQL
+  # (OLTP), Iceberg (data lake), Redshift, and BigQuery via catalog connectors.
+  # ---------------------------------------------------------------------------
+  trino:
+    image: trinodb/trino:426
+    container_name: datahub-trino
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/trino/catalog:/etc/trino/catalog:ro
+      - ./infra/trino/etc:/etc/trino
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      - hive-metastore
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Airflow Init — initialises the Airflow metadata database and creates the
+  # first admin user. Runs once and exits with code 0 on success.
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: datahub-airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${AIRFLOW_DB:-airflow}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${SECRET_KEY}
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin123}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@datahub.local}
+      _AIRFLOW_WWW_USER_FIRSTNAME: Admin
+      _AIRFLOW_WWW_USER_LASTNAME: User
+      _AIRFLOW_WWW_USER_ROLE: Admin
+      TRINO_HOST: trino
+      TRINO_PORT: "8080"
+      OM_HOST: openmetadata-server
+      OM_PORT: "8585"
+    entrypoint: >
+      /bin/bash -c "
+        airflow db migrate &&
+        (airflow users create --username $$_AIRFLOW_WWW_USER_USERNAME --password $$_AIRFLOW_WWW_USER_PASSWORD --email $$_AIRFLOW_WWW_USER_EMAIL --firstname $$_AIRFLOW_WWW_USER_FIRSTNAME --lastname $$_AIRFLOW_WWW_USER_LASTNAME --role $$_AIRFLOW_WWW_USER_ROLE || true) &&
+        echo 'Airflow init complete.'
+      "
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./dbt_project:/opt/airflow/dbt_project
+      - ./ingestion:/opt/airflow/ingestion:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Airflow Webserver — serves the Airflow UI on port 8082 (8080 is used by
+  # Trino; the internal Airflow port remains 8080 to match health-check paths).
+  # ---------------------------------------------------------------------------
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: datahub-airflow-webserver
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${AIRFLOW_DB:-airflow}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${SECRET_KEY}
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      TRINO_HOST: trino
+      TRINO_PORT: "8080"
+      OM_HOST: openmetadata-server
+      OM_PORT: "8585"
+    command: webserver
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./dbt_project:/opt/airflow/dbt_project
+      - ./ingestion:/opt/airflow/ingestion:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      - airflow-init
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Airflow Scheduler — continuously monitors DAGs and triggers task instances.
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: datahub-airflow-scheduler
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${AIRFLOW_DB:-airflow}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${SECRET_KEY}
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      TRINO_HOST: trino
+      TRINO_PORT: "8080"
+      OM_HOST: openmetadata-server
+      OM_PORT: "8585"
+    command: scheduler
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./dbt_project:/opt/airflow/dbt_project
+      - ./ingestion:/opt/airflow/ingestion:ro
+    depends_on:
+      - airflow-init
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Elasticsearch 8 — search and indexing back-end for OpenMetadata.
+  # Security is disabled for the local POC environment.
+  # ---------------------------------------------------------------------------
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: datahub-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # OpenMetadata Bootstrap — runs DB migrations once before the server starts.
+  # Required when using PostgreSQL backend (schema must be created first).
+  # ---------------------------------------------------------------------------
+  openmetadata-migrate:
+    image: openmetadata/server:1.3.1
+    container_name: datahub-openmetadata-migrate
+    command: "./bootstrap/bootstrap_storage.sh migrate-all"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_USER_PASSWORD: ${POSTGRES_PASSWORD}
+      OM_DATABASE: openmetadata
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      DB_USE_SSL: "false"
+      DB_AUTHENTICATION_TYPE: basic
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # OpenMetadata Server — metadata catalog and data governance platform.
+  # Provides lineage, quality, and discovery features across all data sources.
+  # ---------------------------------------------------------------------------
+  openmetadata-server:
+    image: openmetadata/server:1.3.1
+    container_name: datahub-openmetadata-server
+    restart: unless-stopped
+    ports:
+      - "8585:8585"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_USER_PASSWORD: ${POSTGRES_PASSWORD}
+      OM_DATABASE: openmetadata
+      # Force PostgreSQL driver instead of default MySQL
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      DB_USE_SSL: "false"
+      DB_AUTHENTICATION_TYPE: basic
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_SCHEME: http
+      SERVER_HOST_API_URL: http://openmetadata-server:8585
+      AIRFLOW_HOST: http://airflow-webserver:8080
+      PIPELINE_SERVICE_CLIENT_ENDPOINT: http://openmetadata-ingestion:8080
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      openmetadata-migrate:
+        condition: service_completed_successfully
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # OpenMetadata Ingestion — runs Airflow-powered metadata ingestion pipelines
+  # that crawl PostgreSQL, Trino, and other data sources.
+  # ---------------------------------------------------------------------------
+  openmetadata-ingestion:
+    image: openmetadata/ingestion:1.3.1
+    container_name: datahub-openmetadata-ingestion
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # Use a DEDICATED database to avoid conflicts with the main Airflow instance
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/om_airflow
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${SECRET_KEY}
+      OPENMETADATA_SERVER_URL: http://openmetadata-server:8585
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openmetadata-server:
+        condition: service_started
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # API — FastAPI application exposing the Retail AI endpoints. Queries Trino
+  # for analytical results and PostgreSQL for operational data.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: datahub-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app
+      - ./ingestion:/app/ingestion:ro
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      TRINO_HOST: ${TRINO_HOST:-trino}
+      TRINO_PORT: ${TRINO_PORT:-8080}
+      TRINO_USER: ${TRINO_USER:-admin}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+    networks:
+      - datahub-net
+
+  # ---------------------------------------------------------------------------
+  # Frontend — React/Vite single-page application serving the Retail AI
+  # dashboard. Communicates exclusively with the API service.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: datahub-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules   # anonymous volume shadows host node_modules (glibc vs musl)
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - datahub-net

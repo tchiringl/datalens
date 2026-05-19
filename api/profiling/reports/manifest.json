@@ -1,0 +1,20 @@
+[
+  {
+    "source_id": "__default__",
+    "table_fqn": "postgres.public.customers",
+    "file_name": "__default___postgres_public_customers_20260519T053752Z.html",
+    "report_url": "/assessment-reports/__default___postgres_public_customers_20260519T053752Z.html",
+    "row_count_profiled": 1000,
+    "column_count": 19,
+    "created_at": "2026-05-19T05:37:52.399935+00:00"
+  },
+  {
+    "source_id": "__default__",
+    "table_fqn": "postgres.public.orders",
+    "file_name": "__default___postgres_public_orders_20260519T053752Z.html",
+    "report_url": "/assessment-reports/__default___postgres_public_orders_20260519T053752Z.html",
+    "row_count_profiled": 1000,
+    "column_count": 20,
+    "created_at": "2026-05-19T05:37:52.399935+00:00"
+  }
+]

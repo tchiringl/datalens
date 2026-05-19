@@ -1,0 +1,74 @@
+# redshift_service.yml
+# --------------------
+# FUTURE: OpenMetadata ingestion configuration for Amazon Redshift.
+#
+# Replace all placeholder values below before enabling this pipeline.
+# Recommended approach: store credentials in AWS Secrets Manager and inject
+# them as environment variables at container startup.
+#
+# Usage (once configured):
+#   metadata ingest -c redshift_service.yml
+#
+# IAM approach (recommended over password auth):
+#   Set iamAuth: true, remove password, and ensure the ECS/EC2 task role
+#   has redshift:GetClusterCredentials permission.
+
+source:
+  type: redshift
+  serviceName: redshift_analytics
+  serviceConnection:
+    config:
+      type: Redshift
+      # Replace with your Redshift endpoint (provisioned cluster or Serverless workgroup).
+      # Provisioned: <cluster-id>.<region>.redshift.amazonaws.com:5439
+      # Serverless:  <workgroup>.<account>.us-east-1.redshift-serverless.amazonaws.com:5439
+      hostPort: "${REDSHIFT_HOST:-your-cluster.us-east-1.redshift.amazonaws.com}:5439"
+      username: "${REDSHIFT_USER:-redshift_user}"
+      password: "${REDSHIFT_PASSWORD:-redshift_password}"
+      database: "${REDSHIFT_DB:-dev}"
+      # Uncomment for IAM authentication (recommended for production)
+      # iamAuth: true
+      # clusterIdentifier: your-cluster-id
+      # awsRegion: us-east-1
+      sslMode: require
+
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      markDeletedTables: true
+      includeTables: true
+      includeViews: true
+      overrideMetadata: false
+
+      schemaFilterPattern:
+        includes:
+          - public
+          - analytics
+          - marts
+        excludes:
+          - information_schema
+          - pg_catalog
+          - pg_internal
+
+      tableFilterPattern:
+        includes:
+          - ".*"
+        excludes:
+          # Redshift system tables
+          - "stl_.*"
+          - "stv_.*"
+          - "svl_.*"
+          - "svv_.*"
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
+      jwtToken: "your-jwt-token-here"

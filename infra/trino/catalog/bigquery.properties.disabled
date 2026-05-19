@@ -1,0 +1,35 @@
+# =============================================================================
+# Trino Catalog: bigquery
+# =============================================================================
+# FUTURE INTEGRATION — Google BigQuery connector.
+#
+# Before enabling:
+#   1. Replace `bigquery.project-id` with your GCP project ID.
+#   2. Create a service account in GCP with BigQuery Data Viewer and
+#      BigQuery Job User roles, then download its JSON key file.
+#   3. Mount the credentials file into the Trino container by adding a volume
+#      to the `trino` service in docker-compose.yml, for example:
+#        volumes:
+#          - ./infra/trino/bigquery-credentials.json:/etc/trino/bigquery-credentials.json:ro
+#   4. Uncomment `bigquery.credentials-file` below and remove the
+#      `bigquery.credentials-key` line (or vice versa — choose one method).
+#
+# Alternative: supply credentials as a Base64-encoded JSON string via
+#   bigquery.credentials-key=<base64-encoded-service-account-json>
+#
+# Usage from Trino CLI:
+#   SHOW SCHEMAS FROM bigquery;
+#   SELECT * FROM bigquery.my_dataset.my_table LIMIT 10;
+# =============================================================================
+
+connector.name=bigquery
+
+# REPLACE: your GCP project ID (e.g. my-company-analytics-prod)
+bigquery.project-id=your-gcp-project-id
+
+# REPLACE: path inside the Trino container where the service account JSON is mounted
+bigquery.credentials-file=/etc/trino/bigquery-credentials.json
+
+# Optional: restrict which datasets are visible
+# bigquery.views-enabled=true
+# bigquery.experimental.arrow-serialization.enabled=true

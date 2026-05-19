@@ -1,0 +1,9 @@
+# Only packages strictly needed by DAG tasks.
+# Do NOT re-pin requests, pandas, or other packages already pinned by Airflow
+# to avoid resolution conflicts with the base image.
+
+# Trino Python DB-API driver (used by wayfair_mock_dag to INSERT into Iceberg)
+trino==0.328.0
+
+# Trino SQLAlchemy dialect
+trino[sqlalchemy]==0.328.0

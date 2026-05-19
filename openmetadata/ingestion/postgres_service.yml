@@ -1,0 +1,77 @@
+# postgres_service.yml
+# --------------------
+# OpenMetadata ingestion configuration for the PostgreSQL retail source database.
+#
+# Usage:
+#   metadata ingest -c postgres_service.yml
+#
+# The Postgres database is the primary OLTP source for the retail data hub.
+# It contains raw transactional tables (customers, orders, order_items, products)
+# that are replicated to Iceberg via dbt staging models.
+#
+# Connection credentials are read from environment variables where possible;
+# fall back to the literals below for local/dev use.
+
+source:
+  type: postgres
+  serviceName: postgres_retail
+  serviceConnection:
+    config:
+      type: Postgres
+      # Inside Docker Compose, the Postgres service is addressable as "postgres".
+      # Change to a hostname/IP for external/cloud Postgres instances.
+      hostPort: "postgres:5432"
+      username: "${POSTGRES_USER:-datahub}"
+      password: "${POSTGRES_PASSWORD:-datahub123}"
+      database: "${POSTGRES_DB:-retail}"
+      # sslMode: disable | allow | prefer | require | verify-ca | verify-full
+      sslMode: disable
+      # Connection pool settings
+      connectionOptions:
+        connect_timeout: "10"
+
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      markDeletedTables: true
+      includeTables: true
+      includeViews: true
+      overrideMetadata: false
+      # Ingest stored procedures? Set to true if you have them.
+      includeStoredProcedures: false
+      # Ingest table constraints (FK, PK, unique)?
+      includeTableConstraints: true
+
+      schemaFilterPattern:
+        includes:
+          - public
+          - retail
+        excludes:
+          - information_schema
+          - pg_catalog
+          - pg_toast
+
+      tableFilterPattern:
+        # All tables in scope; restrict with includes if needed.
+        includes:
+          - ".*"
+        excludes:
+          # Airflow metadata tables if Airflow shares this Postgres instance
+          - "dag.*"
+          - "task.*"
+          - "log"
+          - "alembic_version"
+          - "ab_.*"
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
+      jwtToken: "your-jwt-token-here"

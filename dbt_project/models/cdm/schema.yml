@@ -1,0 +1,572 @@
+version: 2
+
+models:
+
+  # ---------------------------------------------------------------------------
+  # dim_customers
+  # ---------------------------------------------------------------------------
+  - name: dim_customers
+    description: >
+      CDM Customer dimension. Grain: one row per active customer.
+      Sourced from stg_customers (which filters out inactive accounts and
+      cleans / normalises raw PostgreSQL data).
+      Email NULLs are replaced with 'unknown@noemail.com' and the has_email
+      flag records the original presence of a real address.
+
+    columns:
+      - name: customer_id
+        description: "Primary key — unique identifier for each customer."
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_code
+        description: "Business-facing customer reference code."
+        tests:
+          - not_null
+
+      - name: full_name
+        description: "Concatenation of first_name and last_name."
+
+      - name: email
+        description: >
+          Customer email address. NULL values from the source are replaced
+          with 'unknown@noemail.com' in the staging layer.
+        tests:
+          - not_null
+
+      - name: has_email
+        description: "TRUE if the customer supplied a real email address; FALSE if it was NULL in the source."
+
+      - name: phone
+        description: "Customer phone number."
+
+      - name: date_of_birth
+        description: "Customer date of birth (DATE)."
+
+      - name: age_years
+        description: "Whole number of years since date_of_birth. NULL when DOB is not available."
+
+      - name: gender
+        description: "Customer gender."
+
+      - name: city
+        description: "Customer city."
+
+      - name: state_province
+        description: "Customer state or province."
+
+      - name: country_id
+        description: "Foreign key to countries reference table."
+
+      - name: country_name
+        description: "Resolved country name from countries reference."
+
+      - name: region
+        description: "Geographic region from countries reference."
+
+      - name: zip_code
+        description: "Customer postal / zip code."
+
+      - name: loyalty_tier
+        description: "Standardised (UPPER) loyalty tier."
+        tests:
+          - accepted_values:
+              values: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM']
+
+      - name: loyalty_points
+        description: "Accumulated loyalty points balance."
+
+      - name: acquired_channel
+        description: "Channel through which the customer was first acquired."
+
+      - name: customer_segment
+        description: >
+          Derived business segment:
+          PLATINUM → 'VIP', GOLD → 'High Value', SILVER → 'Regular', BRONZE → 'New'.
+        tests:
+          - accepted_values:
+              values: ['VIP', 'High Value', 'Regular', 'New', 'Unknown']
+
+      - name: created_date
+        description: "Date the customer record was originally created (cast from created_at)."
+
+      - name: dbt_updated_at
+        description: "Timestamp of the most recent dbt model execution that wrote this row."
+
+  # ---------------------------------------------------------------------------
+  # dim_products
+  # ---------------------------------------------------------------------------
+  - name: dim_products
+    description: >
+      CDM Product dimension. Grain: one row per active product.
+      Sourced from stg_products which joins product_categories and filters
+      to is_active = TRUE.
+
+    columns:
+      - name: product_id
+        description: "Primary key — unique identifier for each product."
+        tests:
+          - not_null
+          - unique
+
+      - name: sku
+        description: "Stock-keeping unit — business-facing product code."
+        tests:
+          - not_null
+          - unique
+
+      - name: product_name
+        description: "Product display name."
+        tests:
+          - not_null
+
+      - name: category_id
+        description: "Foreign key to product_categories."
+
+      - name: category_name
+        description: "Resolved category name from product_categories."
+
+      - name: brand
+        description: "Product brand (UPPER-cased in staging)."
+
+      - name: unit_price
+        description: "Current selling price."
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "unit_price > 0"
+
+      - name: cost_price
+        description: "Cost of goods sold price."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "cost_price >= 0"
+
+      - name: margin_pct
+        description: "Gross margin percentage: (unit_price - cost_price) / unit_price * 100. NULL when unit_price is 0."
+
+      - name: weight_kg
+        description: "Product weight in kilograms."
+
+      - name: stock_quantity
+        description: "Current stock quantity."
+
+      - name: reorder_level
+        description: "Minimum stock level before a reorder is triggered."
+
+      - name: is_low_stock
+        description: "TRUE when stock_quantity <= reorder_level."
+
+      - name: price_tier
+        description: >
+          Derived price bucketing:
+          Budget (<$25), Mid-range ($25–$100), Premium ($100–$500), Luxury (>=$500).
+        tests:
+          - accepted_values:
+              values: ['Budget', 'Mid-range', 'Premium', 'Luxury', 'Unknown']
+
+      - name: created_at
+        description: "Original product record creation timestamp from the source."
+
+      - name: dbt_updated_at
+        description: "Timestamp of the most recent dbt model execution that wrote this row."
+
+  # ---------------------------------------------------------------------------
+  # dim_stores
+  # ---------------------------------------------------------------------------
+  - name: dim_stores
+    description: >
+      CDM Store dimension. Grain: one row per store.
+      Full table materialization — small, slowly-changing reference data.
+      Enriched with country_name and region from the countries source table.
+
+    columns:
+      - name: store_id
+        description: "Primary key — unique identifier for each store."
+        tests:
+          - not_null
+          - unique
+
+      - name: store_code
+        description: "Business-facing store reference code."
+        tests:
+          - not_null
+
+      - name: store_name
+        description: "Store display name."
+        tests:
+          - not_null
+
+      - name: store_type
+        description: "Store type classification (UPPER-cased in staging)."
+
+      - name: city
+        description: "City where the store is located."
+
+      - name: state_province
+        description: "State or province."
+
+      - name: country_id
+        description: "Foreign key to countries reference table."
+
+      - name: country_name
+        description: "Resolved country name."
+
+      - name: region
+        description: "Geographic region."
+
+      - name: zip_code
+        description: "Store postal / zip code."
+
+      - name: opened_date
+        description: "Date the store opened."
+
+      - name: store_age_years
+        description: "Whole years since opening date."
+
+      - name: square_footage
+        description: "Store floor area in square feet."
+
+      - name: is_active
+        description: "Whether the store is currently active."
+
+      - name: manager_name
+        description: "Name of the store manager."
+
+      - name: dbt_updated_at
+        description: "Timestamp of the most recent dbt model execution that wrote this row."
+
+  # ---------------------------------------------------------------------------
+  # dim_date
+  # ---------------------------------------------------------------------------
+  - name: dim_date
+    description: >
+      CDM Date dimension. Grain: one row per calendar date from 2022-01-01
+      to 2025-12-31. Generated entirely in Trino using the sequence() function.
+      No source dependency.
+
+    columns:
+      - name: date_id
+        description: "Integer surrogate key in YYYYMMDD format."
+        tests:
+          - not_null
+          - unique
+
+      - name: date_actual
+        description: "Calendar date."
+        tests:
+          - not_null
+          - unique
+
+      - name: day_of_week
+        description: "Day-of-week number: 1=Sunday through 7=Saturday."
+
+      - name: day_name
+        description: "Full English day name (e.g. 'Monday')."
+
+      - name: day_of_month
+        description: "Day of month (1–31)."
+
+      - name: day_of_year
+        description: "Day of year (1–366)."
+
+      - name: week_of_year
+        description: "ISO week number (1–53)."
+
+      - name: month_number
+        description: "Month number (1–12)."
+
+      - name: month_name
+        description: "Full English month name (e.g. 'January')."
+
+      - name: quarter
+        description: "Calendar quarter (1–4)."
+
+      - name: year
+        description: "Four-digit calendar year."
+
+      - name: is_weekend
+        description: "TRUE for Saturday and Sunday."
+
+      - name: is_weekday
+        description: "TRUE for Monday through Friday."
+
+  # ---------------------------------------------------------------------------
+  # fact_orders
+  # ---------------------------------------------------------------------------
+  - name: fact_orders
+    description: >
+      Core transactional fact table.
+      Grain: one row per order line item (order_id + order_item_id).
+      Incrementally loaded; partitioned by order_date.
+      Includes a data quality flag (had_line_total_issue) propagated from
+      the staging layer to identify rows where line_total was recalculated.
+
+    columns:
+      - name: order_item_id
+        description: "Surrogate primary key — unique identifier per order line item."
+        tests:
+          - not_null
+          - unique
+
+      - name: order_id
+        description: "Foreign key to the parent order."
+        tests:
+          - not_null
+
+      - name: order_code
+        description: "Business-facing deduplicated order code."
+        tests:
+          - not_null
+
+      - name: customer_id
+        description: "Foreign key to dim_customers."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
+
+      - name: customer_code
+        description: "Resolved customer business code from dim_customers."
+
+      - name: customer_segment
+        description: "Resolved customer segment from dim_customers."
+
+      - name: store_id
+        description: "Foreign key to dim_stores. NULL for online orders."
+        tests:
+          - relationships:
+              to: ref('dim_stores')
+              field: store_id
+              where: "store_id IS NOT NULL"
+
+      - name: store_name
+        description: "Resolved store name from dim_stores."
+
+      - name: store_type
+        description: "Resolved store type from dim_stores."
+
+      - name: country_id
+        description: "Resolved country_id from dim_stores."
+
+      - name: product_id
+        description: "Foreign key to dim_products."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_products')
+              field: product_id
+
+      - name: sku
+        description: "Resolved SKU from dim_products."
+
+      - name: product_name
+        description: "Resolved product name from dim_products."
+
+      - name: category_name
+        description: "Resolved product category from dim_products."
+
+      - name: brand
+        description: "Resolved product brand from dim_products."
+
+      - name: order_date
+        description: "Date the order was placed."
+        tests:
+          - not_null
+
+      - name: order_month
+        description: "Order month truncated to first of month (for aggregation)."
+
+      - name: order_year
+        description: "Four-digit order year."
+
+      - name: quantity
+        description: "Quantity of the product ordered on this line item."
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "quantity > 0"
+
+      - name: unit_price
+        description: "Unit price at time of order."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "unit_price > 0"
+
+      - name: discount_pct
+        description: "Discount percentage applied to this line item."
+
+      - name: line_total_fixed
+        description: >
+          Line total after DQ correction. If the source value was 0 or NULL,
+          this is recalculated as quantity * unit_price * (1 - discount_pct/100).
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "line_total_fixed >= 0"
+
+      - name: subtotal
+        description: "Order-level subtotal (from order header)."
+
+      - name: discount_amount
+        description: "Order-level total discount applied."
+
+      - name: shipping_cost
+        description: "Shipping cost for the order."
+
+      - name: tax_amount
+        description: "Tax amount for the order."
+
+      - name: total_amount
+        description: "Final order total inclusive of all fees and taxes."
+
+      - name: currency_code
+        description: "Currency code for the transaction."
+
+      - name: payment_method
+        description: "Payment method used."
+
+      - name: order_status
+        description: "Current order status."
+
+      - name: is_online
+        description: "TRUE if the order was placed online (store_id IS NULL)."
+
+      - name: promo_code
+        description: "Promotional code applied to the order, if any."
+
+      - name: had_line_total_issue
+        description: "Data quality flag: TRUE if the original line_total was 0 or NULL and was recalculated."
+
+      - name: dbt_updated_at
+        description: "Timestamp of the most recent dbt model execution that wrote this row."
+
+  # ---------------------------------------------------------------------------
+  # fact_returns
+  # ---------------------------------------------------------------------------
+  - name: fact_returns
+    description: >
+      Returns fact table.
+      Grain: one row per return transaction.
+      Joined to fact_orders for full order and customer context.
+      days_to_return is a useful metric for return window compliance analysis.
+
+    columns:
+      - name: return_id
+        description: "Primary key — unique identifier for each return."
+        tests:
+          - not_null
+          - unique
+
+      - name: order_id
+        description: "Foreign key to the original order."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('fact_orders')
+              field: order_id
+
+      - name: order_item_id
+        description: "Foreign key to the specific line item being returned."
+        tests:
+          - not_null
+
+      - name: customer_id
+        description: "Customer who made the return (resolved from fact_orders)."
+
+      - name: product_id
+        description: "Product being returned (resolved from fact_orders)."
+
+      - name: return_date
+        description: "Date the return was initiated."
+        tests:
+          - not_null
+
+      - name: order_date
+        description: "Original order date (from fact_orders — for return window calc)."
+
+      - name: days_to_return
+        description: "Number of days between order_date and return_date."
+
+      - name: reason
+        description: "Customer-provided reason for the return."
+
+      - name: status
+        description: "Return processing status."
+
+      - name: refund_amount
+        description: "Refund amount issued to the customer."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "refund_amount >= 0"
+
+      - name: dbt_updated_at
+        description: "Timestamp of the most recent dbt model execution that wrote this row."
+
+  # ---------------------------------------------------------------------------
+  # fact_inventory
+  # ---------------------------------------------------------------------------
+  - name: fact_inventory
+    description: >
+      Inventory snapshot fact table.
+      Grain: one row per product × store × snapshot_date.
+      Incrementally loaded by snapshot_date.
+      Useful for trend analysis of stock levels, low-stock alerting, and
+      reorder cadence analysis.
+
+    columns:
+      - name: snapshot_id
+        description: "Primary key — unique identifier for each inventory snapshot."
+        tests:
+          - not_null
+          - unique
+
+      - name: product_id
+        description: "Foreign key to dim_products."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_products')
+              field: product_id
+
+      - name: store_id
+        description: "Foreign key to dim_stores."
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_stores')
+              field: store_id
+
+      - name: snapshot_date
+        description: "Date of the inventory snapshot."
+        tests:
+          - not_null
+
+      - name: quantity_on_hand
+        description: "Total quantity on hand at snapshot time."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "quantity_on_hand >= 0"
+
+      - name: quantity_reserved
+        description: "Quantity reserved for pending orders at snapshot time."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "quantity_reserved >= 0"
+
+      - name: available_quantity
+        description: "quantity_on_hand minus quantity_reserved."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "available_quantity >= 0"
+
+      - name: low_stock_flag
+        description: "TRUE when available_quantity <= 10."
+
+      - name: reorder_triggered
+        description: "Whether a reorder was triggered at this snapshot."
+
+      - name: dbt_updated_at
+        description: "Timestamp of the most recent dbt model execution that wrote this row."

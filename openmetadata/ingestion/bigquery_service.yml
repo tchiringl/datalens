@@ -1,0 +1,89 @@
+# bigquery_service.yml
+# --------------------
+# FUTURE: OpenMetadata ingestion configuration for Google BigQuery.
+#
+# Replace all placeholder values below before enabling this pipeline.
+# The service account JSON key can also be injected via the
+# GOOGLE_APPLICATION_CREDENTIALS environment variable if you prefer
+# Workload Identity / ADC-style authentication.
+#
+# Usage (once configured):
+#   metadata ingest -c bigquery_service.yml
+#
+# Minimum IAM roles required for the service account:
+#   - roles/bigquery.dataViewer       (read table metadata & data)
+#   - roles/bigquery.jobUser          (run queries for profiling)
+#   - roles/bigquery.metadataViewer   (read dataset/table metadata)
+
+source:
+  type: bigQuery
+  serviceName: bigquery_analytics
+  serviceConnection:
+    config:
+      type: BigQuery
+      credentials:
+        gcpConfig:
+          type: service_account
+          # Replace with your GCP project ID
+          projectId: "${GCP_PROJECT_ID:-your-gcp-project-id}"
+          # Replace with values from the downloaded service account JSON key
+          privateKeyId: "${GCP_PRIVATE_KEY_ID:-your-private-key-id}"
+          # Multi-line PEM key; use \\n or inject from a secret manager
+          privateKey: "${GCP_PRIVATE_KEY:-your-private-key}"
+          clientEmail: "${GCP_CLIENT_EMAIL:-your-service-account@your-project.iam.gserviceaccount.com}"
+          clientId: "${GCP_CLIENT_ID:-your-client-id}"
+          # These rarely change; update if Google rotates them
+          authUri: "https://accounts.google.com/o/oauth2/auth"
+          tokenUri: "https://oauth2.googleapis.com/token"
+          authProviderX509CertUrl: "https://www.googleapis.com/oauth2/v1/certs"
+          clientX509CertUrl: "https://www.googleapis.com/robot/v1/metadata/x509/your-service-account%40your-project.iam.gserviceaccount.com"
+        # Optionally limit ingestion to a specific GCP project (defaults to projectId above)
+        # gcpImpersonateServiceAccount:
+        #   serviceAccountEmail: another-sa@project.iam.gserviceaccount.com
+        #   lifetime: 3600
+
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      markDeletedTables: true
+      includeTables: true
+      includeViews: true
+      # Ingest partitioned table metadata?
+      includeTags: true
+      overrideMetadata: false
+
+      # BigQuery "databases" are datasets; filter by dataset name
+      databaseFilterPattern:
+        includes:
+          - analytics
+          - marts
+          - raw
+        excludes:
+          - _script_logs
+          - INFORMATION_SCHEMA
+
+      schemaFilterPattern:
+        includes:
+          - ".*"
+
+      tableFilterPattern:
+        includes:
+          - ".*"
+        excludes:
+          # Temp / staging tables with common naming patterns
+          - "tmp_.*"
+          - "temp_.*"
+          - "_bq_.*"
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
+      jwtToken: "your-jwt-token-here"

@@ -1,0 +1,3 @@
+dbt-core==1.8.0
+dbt-trino==1.8.0
+dbt-utils>=1.0.0

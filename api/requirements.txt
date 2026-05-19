@@ -1,0 +1,11 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+httpx==0.27.0
+pydantic==2.7.0
+trino==0.328.0
+trino[sqlalchemy]==0.328.0
+pandas==2.1.4
+python-dotenv==1.0.0
+sqlalchemy==2.0.30
+ydata-profiling==4.18.0
+requests>=2.32.0

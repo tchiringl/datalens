@@ -1,0 +1,74 @@
+# dbt_ingestion.yml
+# -----------------
+# OpenMetadata dbt ingestion configuration.
+#
+# Reads the three dbt artifact files produced by `dbt docs generate`:
+#   - manifest.json      (model DAG, column descriptions, tests, tags)
+#   - catalog.json       (column types from the warehouse)
+#   - run_results.json   (latest run status per model/test)
+#
+# Attaches this metadata to the EXISTING tables already registered under
+# `serviceName` (trinodatahub).  Run the Trino metadata ingestion pipeline
+# BEFORE this one so tables are already known to OM.
+#
+# Usage:
+#   metadata ingest -c dbt_ingestion.yml
+#
+# In Docker Compose, mount the dbt project's target/ directory into the
+# ingestion container at /dbt/target/ (see docker-compose.yml volumes section).
+
+source:
+  type: dbt
+  # Must match the serviceName of the Trino connector (trino_service.yml).
+  # OM uses this to link dbt models to warehouse tables.
+  serviceName: trinodatahub
+  serviceConnection:
+    config:
+      type: Trino
+      hostPort: trino:8080
+      username: admin
+      catalog: iceberg
+      params:
+        http_scheme: http
+
+  sourceConfig:
+    config:
+      type: DBT
+
+      dbtConfigSource:
+        # Paths are resolved inside the container running this ingestion.
+        # Adjust if the mount point differs.
+        dbtCatalogFilePath: /dbt/target/catalog.json
+        dbtManifestFilePath: /dbt/target/manifest.json
+        dbtRunResultsFilePath: /dbt/target/run_results.json
+
+      # Write dbt model descriptions to OM table/column descriptions.
+      # Set to false to preserve manually curated descriptions.
+      dbtUpdateDescriptions: true
+
+      # Ingest dbt tags as OM tags on tables and columns.
+      includeTags: true
+
+      # How to handle dbt test results (data quality) in OM
+      # Options: all | failed | none
+      dbtClassificationName: dbt_classification
+
+      # Filter pattern to restrict which dbt models are ingested.
+      # Useful in monorepos with multiple dbt projects.
+      # dbtTableFilterPattern:
+      #   includes:
+      #     - "cdm.*"
+      #     - "staging.*"
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
+      jwtToken: "your-jwt-token-here"

@@ -1,0 +1,105 @@
+# profiler_trino.yml
+# ------------------
+# OpenMetadata Profiler configuration for Trino (targeting Iceberg CDM tables).
+#
+# The Profiler collects:
+#   - Column-level statistics (min, max, mean, null count, distinct count, etc.)
+#   - Sample data rows (shown in the OM UI Data Preview tab)
+#   - Custom metric queries (if defined on the table in OM)
+#
+# This config is SEPARATE from the metadata ingestion pipeline (trino_service.yml).
+# Run profiling AFTER metadata ingestion so tables already exist in OM.
+#
+# Expected execution time: 15–30 min depending on CDM table sizes.
+#
+# Usage:
+#   metadata profile -c profiler_trino.yml
+#
+# Triggered automatically by the om_profiling_dag (Airflow) every Sunday 02:00 UTC.
+# Can also be run manually:
+#   docker compose exec openmetadata-ingestion metadata profile -c /opt/ingestion/profiler_trino.yml
+
+source:
+  type: trino
+  serviceName: trinodatahub
+  serviceConnection:
+    config:
+      type: Trino
+      hostPort: trino:8080
+      username: admin
+      catalog: iceberg
+      params:
+        http_scheme: http
+
+  sourceConfig:
+    config:
+      type: Profiler
+
+      # Generate a sample data preview (shown in OM UI)
+      generateSampleData: true
+      # Number of rows to store as sample data
+      sampleDataCount: 50
+
+      # Percentage of rows to use when computing statistics.
+      # 30.0 = 30% random sample.  Increase for more accurate statistics on
+      # small tables; decrease for very large tables to control query cost.
+      profileSample: 30.0
+      # Unit: "PERCENTAGE" or "ROWS"
+      profileSampleType: PERCENTAGE
+
+      # Compute column-level statistics
+      computeMetrics: true
+
+      # Metrics to compute per column.
+      # Leave empty to compute all default metrics.
+      # metrics:
+      #   - ROW_COUNT
+      #   - COLUMN_COUNT
+      #   - NULL_COUNT
+      #   - DISTINCT_COUNT
+      #   - UNIQUE_COUNT
+      #   - MEAN
+      #   - MEDIAN
+      #   - MIN
+      #   - MAX
+      #   - STDDEV
+
+      # Restrict profiling to Iceberg CDM tables only.
+      # Adjust the regex to include/exclude specific table groups.
+      tableFilterPattern:
+        includes:
+          - "iceberg\\.cdm\\..*"
+        excludes:
+          # Exclude any internal dbt artefact tables
+          - "iceberg\\.cdm\\.dbt_.*"
+
+      schemaFilterPattern:
+        includes:
+          - cdm
+        excludes:
+          - information_schema
+
+      databaseFilterPattern:
+        includes:
+          - iceberg
+
+      # Thread pool size for parallel column profiling.
+      # Keep at 2–4 for a single-node Trino dev setup.
+      threadCount: 2
+
+      # Timeout (in seconds) per individual table profile query.
+      # Large fact tables with 30% sampling may need 5–10 min.
+      timeoutSeconds: 600
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
+      jwtToken: "your-jwt-token-here"

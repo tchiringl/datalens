@@ -1,0 +1,94 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: "Cleaned customer records — NULLs coalesced, strings trimmed, inactive rows excluded"
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: customer_code
+        tests: [not_null, unique]
+      - name: email_cleaned
+        tests: [not_null]
+      - name: loyalty_tier
+        tests:
+          - accepted_values:
+              values: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM']
+      - name: acquired_channel
+        tests:
+          - accepted_values:
+              values: ['organic', 'paid_search', 'social', 'referral', 'email', 'in_store']
+              config:
+                where: "acquired_channel IS NOT NULL"
+
+  - name: stg_orders
+    description: "Deduplicated orders — duplicate order_codes resolved by keeping latest created_at"
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: customer_id
+        tests: [not_null]
+      - name: order_date
+        tests: [not_null]
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'returned']
+
+  - name: stg_order_items
+    description: "Order items with corrected line_total — zero line_totals recalculated from qty * price"
+    columns:
+      - name: order_item_id
+        tests: [not_null, unique]
+      - name: order_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+      - name: quantity
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1"
+      - name: line_total_fixed
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+
+  - name: stg_products
+    description: "Active products enriched with category name and margin percentage"
+    columns:
+      - name: product_id
+        tests: [not_null, unique]
+      - name: sku
+        tests: [not_null, unique]
+      - name: unit_price
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+
+  - name: stg_stores
+    description: "Stores enriched with country name and region, with age in years derived"
+    columns:
+      - name: store_id
+        tests: [not_null, unique]
+      - name: store_code
+        tests: [not_null, unique]
+
+  - name: stg_returns
+    description: "Returns with resolved order_code and product_sku via joins"
+    columns:
+      - name: return_id
+        tests: [not_null, unique]
+      - name: order_id
+        tests: [not_null]
+
+  - name: stg_inventory
+    description: "Inventory snapshots enriched with product and store names, low_stock_flag derived"
+    columns:
+      - name: snapshot_id
+        tests: [not_null, unique]
+      - name: product_id
+        tests: [not_null]
+      - name: store_id
+        tests: [not_null]
+      - name: snapshot_date
+        tests: [not_null]
