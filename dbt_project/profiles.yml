@@ -1,4 +1,4 @@
-datahub_trino:
+datalens_trino:
   target: prod
   outputs:
     prod:

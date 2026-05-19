@@ -1,4 +1,4 @@
-# DataHub Retail AI POC
+# Data Lens Retail AI POC
 
 ## Overview
 
@@ -10,7 +10,7 @@ This repository contains the complete infrastructure layer for a Retail AI proof
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          DataHub Retail AI POC                          │
+│                          Data Lens Retail AI POC                          │
 │                         (Docker Compose Stack)                          │
 └─────────────────────────────────────────────────────────────────────────┘
 
@@ -90,8 +90,8 @@ This repository contains the complete infrastructure layer for a Retail AI proof
 ### Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/your-org/datahub-retail-poc.git
-cd datahub-retail-poc
+git clone https://github.com/your-org/datalens-retail-poc.git
+cd datalens-retail-poc
 ```
 
 ### Step 2 — Configure environment variables
@@ -149,7 +149,7 @@ All entries should report `[OK]`. If a service shows `[FAIL]`, wait 30 seconds a
 | OpenMetadata | http://localhost:8585 | admin / admin |
 | MinIO Console | http://localhost:9001 | minioadmin / minioadmin123 |
 | Elasticsearch | http://localhost:9200 | no auth (security disabled) |
-| PostgreSQL | localhost:5432 | datahub / datahub123 |
+| PostgreSQL | localhost:5432 | datalens / datalens123 |
 
 ---
 
@@ -220,7 +220,7 @@ Single-page application built from `./frontend/`. Communicates with the API via 
 
 Run `make validate` and verify the following manually:
 
-- [ ] PostgreSQL: `docker compose exec postgres pg_isready -U datahub` prints `accepting connections`
+- [ ] PostgreSQL: `docker compose exec postgres pg_isready -U datalens` prints `accepting connections`
 - [ ] MinIO: http://localhost:9001 loads the login page; buckets `warehouse` and `raw` are visible after login
 - [ ] Trino: http://localhost:8080/v1/info returns JSON with `"starting":false`
 - [ ] Trino catalogs: `make trino-cli` then `SHOW CATALOGS;` lists `iceberg`, `postgres`, `redshift`, `bigquery`

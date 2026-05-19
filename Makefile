@@ -1,5 +1,5 @@
 # =============================================================================
-# DataHub Retail AI POC — Makefile
+# Data Lens Retail AI POC — Makefile
 # =============================================================================
 # Usage:  make <target>
 # Run `make help` to see all available targets.
@@ -10,7 +10,7 @@
 ## Show this help message
 help:
 	@echo ""
-	@echo "DataHub Retail AI POC — available make targets"
+	@echo "Data Lens Retail AI POC — available make targets"
 	@echo "================================================"
 	@grep -E '^## ' Makefile | sed 's/## /  /'
 	@echo ""
@@ -49,7 +49,7 @@ dbt-test:
 ## Check health endpoints for all services
 validate:
 	@echo ""
-	@echo "Validating DataHub service health endpoints..."
+	@echo "Validating Data Lens service health endpoints..."
 	@echo "==============================================="
 	@echo ""
 	@_check() { \
@@ -71,7 +71,7 @@ validate:
 	_check "Frontend"                "http://localhost:3000"
 	@echo ""
 	@echo "PostgreSQL status:"
-	@docker compose exec postgres pg_isready -U $${POSTGRES_USER:-datahub} || true
+	@docker compose exec postgres pg_isready -U $${POSTGRES_USER:-datalens} || true
 	@echo ""
 
 ## Show the current status of all containers

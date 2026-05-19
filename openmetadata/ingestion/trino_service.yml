@@ -20,7 +20,7 @@
 
 source:
   type: trino
-  serviceName: trinodatahub
+  serviceName: trinodatalens
   serviceConnection:
     config:
       type: Trino

@@ -480,7 +480,7 @@ if __name__ == "__main__":
             print("  pip install fastapi uvicorn")
             raise SystemExit(1)
 
-        app = FastAPI(title="Retail AI Data Hub – Mock API", version="0.1.0")
+        app = FastAPI(title="Retail AI Data Lens – Mock API", version="0.1.0")
         app.include_router(get_wayfair_router(), prefix="/mock/wayfair")
 
         @app.get("/health")

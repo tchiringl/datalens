@@ -22,8 +22,8 @@ OM_PASS = os.getenv("OM_ADMIN_PASSWORD", "admin")
 
 CONNECTORS = [
     {
-        "name": "trinodatahub",
-        "displayName": "Trino DataHub",
+        "name": "trinodatalens",
+        "displayName": "Trino Data Lens",
         "description": "Primary Trino federated query engine — connects postgres, iceberg, redshift, bigquery catalogs",
         "serviceType": "Trino",
         "connection": {
@@ -45,8 +45,8 @@ CONNECTORS = [
             "config": {
                 "type": "Postgres",
                 "hostPort": "postgres:5432",
-                "username": os.getenv("POSTGRES_USER", "datahub"),
-                "authType": {"password": os.getenv("POSTGRES_PASSWORD", "datahub123")},
+                "username": os.getenv("POSTGRES_USER", "datalens"),
+                "authType": {"password": os.getenv("POSTGRES_PASSWORD", "datalens123")},
                 "database": os.getenv("POSTGRES_DB", "retail"),
             }
         },
@@ -167,7 +167,7 @@ def register_connector(connector: dict, token: str, dry_run: bool = False) -> No
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Register DataHub connectors in OpenMetadata")
+    parser = argparse.ArgumentParser(description="Register Data Lens connectors in OpenMetadata")
     parser.add_argument("--dry-run", action="store_true", help="Print actions without executing")
     args = parser.parse_args()
 

@@ -37,7 +37,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
-  const pageTitle = PAGE_TITLES[location.pathname] ?? 'DataHub'
+  const pageTitle = PAGE_TITLES[location.pathname] ?? 'Data Lens'
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -49,7 +49,7 @@ export default function Layout({ children }: LayoutProps) {
             <Zap className="h-4 w-4 text-white" />
           </div>
           <div>
-            <p className="text-sm font-bold text-white leading-tight">DataHub</p>
+            <p className="text-sm font-bold text-white leading-tight">Data Lens</p>
             <p className="text-[10px] text-slate-400 leading-tight tracking-wide uppercase">
               AI Studio
             </p>

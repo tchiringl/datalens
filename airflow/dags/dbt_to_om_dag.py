@@ -43,7 +43,7 @@ TRINO_PIPELINE_NAME = os.getenv("OM_TRINO_PIPELINE_NAME", "trino_metadata_pipeli
 # Default args
 # ---------------------------------------------------------------------------
 default_args = {
-    "owner": "datahub",
+    "owner": "datalens",
     "depends_on_past": False,
     "email_on_failure": False,
     "email_on_retry": False,
@@ -253,7 +253,7 @@ with DAG(
     schedule_interval=None,          # API-triggered only; set a cron here if needed
     start_date=days_ago(1),
     catchup=False,
-    tags=["datahub", "dbt", "cdm", "openmetadata"],
+    tags=["datalens", "dbt", "cdm", "openmetadata"],
     max_active_runs=3,
     dagrun_timeout=timedelta(hours=1),
     doc_md="""

@@ -37,7 +37,7 @@ MAX_PRODUCTS = int(os.getenv("WAYFAIR_MAX_PRODUCTS", "1000"))
 # Default args
 # ---------------------------------------------------------------------------
 default_args = {
-    "owner": "datahub",
+    "owner": "datalens",
     "depends_on_past": False,
     "email_on_failure": False,
     "email_on_retry": False,
@@ -318,7 +318,7 @@ with DAG(
     schedule_interval="@daily",
     start_date=days_ago(7),
     catchup=True,
-    tags=["datahub", "ingestion", "wayfair", "iceberg"],
+    tags=["datalens", "ingestion", "wayfair", "iceberg"],
     max_active_runs=1,
     doc_md="""
 ## Wayfair Mock Ingestion DAG

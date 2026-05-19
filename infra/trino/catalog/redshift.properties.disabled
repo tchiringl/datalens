@@ -12,7 +12,7 @@
 #      (add the Trino container's outbound IP to the Redshift security group).
 #   4. Download the Amazon Redshift JDBC driver JAR (RedshiftJDBC42-*.jar) and
 #      place it in the Trino plugin directory:
-#        docker cp RedshiftJDBC42-2.1.0.28.jar datahub-trino:/usr/lib/trino/plugin/redshift/
+#        docker cp RedshiftJDBC42-2.1.0.28.jar datalens-trino:/usr/lib/trino/plugin/redshift/
 #      Then restart the Trino container.
 #
 # Usage from Trino CLI:

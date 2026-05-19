@@ -1,21 +1,21 @@
-# /datahub-poc
+# /datalens-poc
 
-Build, scaffold, or extend the DataHub Retail AI Data Hub POC. This skill covers the full stack: infrastructure, backend pipelines, and the modern React frontend GUI.
+Build, scaffold, or extend the Data Lens Retail AI Data Lens POC. This skill covers the full stack: infrastructure, backend pipelines, and the modern React frontend GUI.
 
 ## Usage
 
 ```
-/datahub-poc                        # Show menu of available actions
-/datahub-poc scaffold               # Scaffold the full project structure
-/datahub-poc infra                  # Generate docker-compose + configs
-/datahub-poc seed                   # Generate PostgreSQL seed data + schema
-/datahub-poc dbt                    # Scaffold dbt project (models, tests, profiles)
-/datahub-poc airflow                # Generate Airflow DAGs
-/datahub-poc openmetadata           # Generate OpenMetadata ingestion configs
-/datahub-poc frontend               # Scaffold the React frontend GUI
-/datahub-poc frontend <component>   # Build a specific frontend component
-/datahub-poc validate               # Print the full validation checklist
-/datahub-poc status                 # Check which POC components exist on disk
+/datalens-poc                        # Show menu of available actions
+/datalens-poc scaffold               # Scaffold the full project structure
+/datalens-poc infra                  # Generate docker-compose + configs
+/datalens-poc seed                   # Generate PostgreSQL seed data + schema
+/datalens-poc dbt                    # Scaffold dbt project (models, tests, profiles)
+/datalens-poc airflow                # Generate Airflow DAGs
+/datalens-poc openmetadata           # Generate OpenMetadata ingestion configs
+/datalens-poc frontend               # Scaffold the React frontend GUI
+/datalens-poc frontend <component>   # Build a specific frontend component
+/datalens-poc validate               # Print the full validation checklist
+/datalens-poc status                 # Check which POC components exist on disk
 ```
 
 ---
@@ -48,7 +48,7 @@ Build, scaffold, or extend the DataHub Retail AI Data Hub POC. This skill covers
 Create the full project directory tree with placeholder files:
 
 ```
-datahub-poc/
+datalens-poc/
 ├── docker-compose.yml
 ├── .env.example
 ├── README.md
@@ -110,13 +110,13 @@ Include these services with health checks:
 - `api` — FastAPI backend, port 8000, mounts `./api/`
 - `frontend` — React dev server, port 3000, mounts `./frontend/`
 
-All services share a `datahub-net` bridge network.
+All services share a `datalens-net` bridge network.
 Use `.env` for all credentials.
 
 ### `.env.example`
 ```
-POSTGRES_USER=datahub
-POSTGRES_PASSWORD=datahub123
+POSTGRES_USER=datalens
+POSTGRES_PASSWORD=datalens123
 POSTGRES_DB=retail
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin123
@@ -174,7 +174,7 @@ Generate `db/init.sql` with:
 Generate a complete dbt project with dbt-trino adapter:
 
 ### `dbt_project.yml`
-- project name: `datahub_cdm`
+- project name: `datalens_cdm`
 - models materialized as `incremental` for cdm layer, `view` for staging
 
 ### `profiles.yml`
@@ -322,7 +322,7 @@ Use `httpx` async client to proxy to Airflow, OpenMetadata, and Trino REST APIs.
 Print this checklist:
 
 ```
-DataHub POC Validation Checklist
+Data Lens POC Validation Checklist
 =================================
 
 Infrastructure

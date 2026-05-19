@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DataHub POC — end-to-end validation script
+# Data Lens POC — end-to-end validation script
 # Usage: bash scripts/validate.sh
 
 set -uo pipefail
@@ -43,7 +43,7 @@ fi
 # ── PostgreSQL seed data ─────────────────────────────────────────────────────
 head "PostgreSQL Seed Data"
 for table in customers orders order_items products stores; do
-  COUNT=$(docker compose exec -T postgres psql -U datahub -d retail -t \
+  COUNT=$(docker compose exec -T postgres psql -U datalens -d retail -t \
     -c "SELECT COUNT(*) FROM $table" 2>/dev/null | tr -d ' ')
   if [[ "$COUNT" =~ ^[0-9]+$ ]] && [[ "$COUNT" -gt 0 ]]; then
     pass "Table '$table': ${COUNT} rows"
@@ -53,12 +53,12 @@ for table in customers orders order_items products stores; do
 done
 
 # DQ issues
-NULL_EMAIL=$(docker compose exec -T postgres psql -U datahub -d retail -t \
+NULL_EMAIL=$(docker compose exec -T postgres psql -U datalens -d retail -t \
   -c "SELECT COUNT(*) FROM customers WHERE email IS NULL" 2>/dev/null | tr -d ' ')
 [[ "$NULL_EMAIL" -ge 50 ]] && pass "DQ issue: ${NULL_EMAIL} customers with NULL email" \
   || fail "DQ issue: expected ≥50 NULL emails, got ${NULL_EMAIL}"
 
-DUP_CODES=$(docker compose exec -T postgres psql -U datahub -d retail -t \
+DUP_CODES=$(docker compose exec -T postgres psql -U datalens -d retail -t \
   -c "SELECT COUNT(*) FROM (SELECT order_code FROM orders GROUP BY order_code HAVING COUNT(*)>1) x" \
   2>/dev/null | tr -d ' ')
 [[ "$DUP_CODES" -ge 20 ]] && pass "DQ issue: ${DUP_CODES} duplicate order codes" \
@@ -116,7 +116,7 @@ fi
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 head "Frontend"
-if curl -sf http://localhost:3000 | grep -q "DataHub\|html"; then
+if curl -sf http://localhost:3000 | grep -q "Data Lens\|html"; then
   pass "Frontend serving at http://localhost:3000"
 else
   fail "Frontend not responding"

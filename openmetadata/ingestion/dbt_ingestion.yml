@@ -8,7 +8,7 @@
 #   - run_results.json   (latest run status per model/test)
 #
 # Attaches this metadata to the EXISTING tables already registered under
-# `serviceName` (trinodatahub).  Run the Trino metadata ingestion pipeline
+# `serviceName` (trinodatalens).  Run the Trino metadata ingestion pipeline
 # BEFORE this one so tables are already known to OM.
 #
 # Usage:
@@ -21,7 +21,7 @@ source:
   type: dbt
   # Must match the serviceName of the Trino connector (trino_service.yml).
   # OM uses this to link dbt models to warehouse tables.
-  serviceName: trinodatahub
+  serviceName: trinodatalens
   serviceConnection:
     config:
       type: Trino

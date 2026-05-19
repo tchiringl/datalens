@@ -1,7 +1,7 @@
 """
 run_profile.py
 --------------
-YData Profiling script for the Retail AI Data Hub CDM and raw source tables.
+YData Profiling script for the Retail AI Data Lens CDM and raw source tables.
 
 What it does:
   - Connects to Trino to read CDM and source tables
@@ -70,7 +70,7 @@ DATE_FILTER_FROM = os.getenv("PROFILING_DATE_FROM", "2024-01-01")
 
 # YData profiling configuration overrides
 YDATA_CONFIG = {
-    "title_prefix": "DataHub Profile: ",
+    "title_prefix": "Data Lens Profile: ",
     "explorative": True,
     "correlations": {
         "pearson":  {"calculate": True},

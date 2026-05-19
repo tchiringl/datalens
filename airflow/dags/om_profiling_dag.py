@@ -53,7 +53,7 @@ POLL_INTERVAL_SECONDS = int(os.getenv("OM_PROFILING_POLL_INTERVAL", "45"))
 # Default args
 # ---------------------------------------------------------------------------
 default_args = {
-    "owner": "datahub",
+    "owner": "datalens",
     "depends_on_past": False,
     "email_on_failure": False,
     "email_on_retry": False,
@@ -401,7 +401,7 @@ with DAG(
     schedule_interval="0 2 * * 0",   # Every Sunday at 02:00 UTC
     start_date=days_ago(7),
     catchup=False,
-    tags=["datahub", "openmetadata", "profiling"],
+    tags=["datalens", "openmetadata", "profiling"],
     max_active_runs=1,
     doc_md="""
 ## OpenMetadata Profiling DAG

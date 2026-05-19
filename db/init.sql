@@ -1,5 +1,5 @@
 -- =============================================================================
--- Retail AI Data Hub POC — PostgreSQL Seed File
+-- Retail AI Data Lens POC — PostgreSQL Seed File
 -- =============================================================================
 -- Schemas: public (retail), airflow (metadata), openmetadata (metadata)
 -- =============================================================================

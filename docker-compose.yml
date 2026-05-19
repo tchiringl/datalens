@@ -1,7 +1,7 @@
 version: "3.8"
 
 # =============================================================================
-# DataHub Retail AI POC — Docker Compose
+# Data Lens Retail AI POC — Docker Compose
 # =============================================================================
 # Prerequisites: Docker Desktop 4.x+, 16 GB RAM allocated to Docker
 # Usage:
@@ -11,7 +11,7 @@ version: "3.8"
 # =============================================================================
 
 networks:
-  datahub-net:
+  datalens-net:
     driver: bridge
 
 volumes:
@@ -27,7 +27,7 @@ services:
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:15
-    container_name: datahub-postgres
+    container_name: datalens-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -45,7 +45,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # MinIO — S3-compatible object store for the Iceberg data lake warehouse
@@ -53,7 +53,7 @@ services:
   # ---------------------------------------------------------------------------
   minio:
     image: minio/minio:latest
-    container_name: datahub-minio
+    container_name: datalens-minio
     restart: unless-stopped
     ports:
       - "9000:9000"   # S3 API
@@ -71,7 +71,7 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # MinIO Init — one-shot container that creates the required buckets using the
@@ -79,7 +79,7 @@ services:
   # ---------------------------------------------------------------------------
   minio-init:
     image: minio/mc:latest
-    container_name: datahub-minio-init
+    container_name: datalens-minio-init
     depends_on:
       minio:
         condition: service_healthy
@@ -94,7 +94,7 @@ services:
         echo 'MinIO buckets ready.'
       "
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Hive Metastore — catalog service for Iceberg tables. Stores table metadata
@@ -102,7 +102,7 @@ services:
   # ---------------------------------------------------------------------------
   hive-metastore:
     image: bitsondatadev/hive-metastore:latest
-    container_name: datahub-hive-metastore
+    container_name: datalens-hive-metastore
     restart: unless-stopped
     ports:
       - "9083:9083"
@@ -121,7 +121,7 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Trino 426 — distributed SQL query engine. Federates across PostgreSQL
@@ -129,7 +129,7 @@ services:
   # ---------------------------------------------------------------------------
   trino:
     image: trinodb/trino:426
-    container_name: datahub-trino
+    container_name: datalens-trino
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -145,7 +145,7 @@ services:
     depends_on:
       - hive-metastore
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Airflow Init — initialises the Airflow metadata database and creates the
@@ -155,7 +155,7 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
-    container_name: datahub-airflow-init
+    container_name: datalens-airflow-init
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${AIRFLOW_DB:-airflow}
@@ -165,7 +165,7 @@ services:
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin123}
-      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@datahub.local}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@datalens.local}
       _AIRFLOW_WWW_USER_FIRSTNAME: Admin
       _AIRFLOW_WWW_USER_LASTNAME: User
       _AIRFLOW_WWW_USER_ROLE: Admin
@@ -187,7 +187,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Airflow Webserver — serves the Airflow UI on port 8082 (8080 is used by
@@ -197,7 +197,7 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
-    container_name: datahub-airflow-webserver
+    container_name: datalens-airflow-webserver
     restart: unless-stopped
     ports:
       - "8082:8080"
@@ -225,7 +225,7 @@ services:
     depends_on:
       - airflow-init
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Airflow Scheduler — continuously monitors DAGs and triggers task instances.
@@ -234,7 +234,7 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
-    container_name: datahub-airflow-scheduler
+    container_name: datalens-airflow-scheduler
     restart: unless-stopped
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -254,7 +254,7 @@ services:
     depends_on:
       - airflow-init
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Elasticsearch 8 — search and indexing back-end for OpenMetadata.
@@ -262,7 +262,7 @@ services:
   # ---------------------------------------------------------------------------
   elasticsearch:
     image: elasticsearch:8.11.0
-    container_name: datahub-elasticsearch
+    container_name: datalens-elasticsearch
     restart: unless-stopped
     ports:
       - "9200:9200"
@@ -279,7 +279,7 @@ services:
       retries: 10
       start_period: 60s
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # OpenMetadata Bootstrap — runs DB migrations once before the server starts.
@@ -287,7 +287,7 @@ services:
   # ---------------------------------------------------------------------------
   openmetadata-migrate:
     image: openmetadata/server:1.3.1
-    container_name: datahub-openmetadata-migrate
+    container_name: datalens-openmetadata-migrate
     command: "./bootstrap/bootstrap_storage.sh migrate-all"
     environment:
       DB_HOST: postgres
@@ -303,7 +303,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # OpenMetadata Server — metadata catalog and data governance platform.
@@ -311,7 +311,7 @@ services:
   # ---------------------------------------------------------------------------
   openmetadata-server:
     image: openmetadata/server:1.3.1
-    container_name: datahub-openmetadata-server
+    container_name: datalens-openmetadata-server
     restart: unless-stopped
     ports:
       - "8585:8585"
@@ -340,7 +340,7 @@ services:
       openmetadata-migrate:
         condition: service_completed_successfully
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # OpenMetadata Ingestion — runs Airflow-powered metadata ingestion pipelines
@@ -348,7 +348,7 @@ services:
   # ---------------------------------------------------------------------------
   openmetadata-ingestion:
     image: openmetadata/ingestion:1.3.1
-    container_name: datahub-openmetadata-ingestion
+    container_name: datalens-openmetadata-ingestion
     restart: unless-stopped
     ports:
       - "8083:8080"
@@ -365,7 +365,7 @@ services:
       openmetadata-server:
         condition: service_started
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # API — FastAPI application exposing the Retail AI endpoints. Queries Trino
@@ -375,7 +375,7 @@ services:
     build:
       context: ./api
       dockerfile: Dockerfile
-    container_name: datahub-api
+    container_name: datalens-api
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -401,7 +401,7 @@ services:
       trino:
         condition: service_healthy
     networks:
-      - datahub-net
+      - datalens-net
 
   # ---------------------------------------------------------------------------
   # Frontend — React/Vite single-page application serving the Retail AI
@@ -411,7 +411,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: datahub-frontend
+    container_name: datalens-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -424,4 +424,4 @@ services:
       api:
         condition: service_healthy
     networks:
-      - datahub-net
+      - datalens-net

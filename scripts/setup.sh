@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DataHub POC — one-shot setup script
+# Data Lens POC — one-shot setup script
 # Usage: bash scripts/setup.sh
 
 set -euo pipefail
@@ -46,7 +46,7 @@ ok "Services started"
 # 6. Wait for PostgreSQL
 info "Waiting for PostgreSQL to be healthy..."
 for i in $(seq 1 30); do
-  if docker compose exec -T postgres pg_isready -U datahub &>/dev/null; then
+  if docker compose exec -T postgres pg_isready -U datalens &>/dev/null; then
     ok "PostgreSQL is ready"; break
   fi
   [[ $i -eq 30 ]] && fail "PostgreSQL did not become ready in 60s"
@@ -65,7 +65,7 @@ done
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   DataHub POC is running!                        ║${NC}"
+echo -e "${GREEN}║   Data Lens POC is running!                        ║${NC}"
 echo -e "${GREEN}╠══════════════════════════════════════════════════╣${NC}"
 echo -e "${GREEN}║  Frontend      →  http://localhost:3000          ║${NC}"
 echo -e "${GREEN}║  API docs      →  http://localhost:8000/docs     ║${NC}"

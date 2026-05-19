@@ -5,7 +5,7 @@
 # Usage:
 #   metadata ingest -c postgres_service.yml
 #
-# The Postgres database is the primary OLTP source for the retail data hub.
+# The Postgres database is the primary OLTP source for the retail data lens.
 # It contains raw transactional tables (customers, orders, order_items, products)
 # that are replicated to Iceberg via dbt staging models.
 #
@@ -21,8 +21,8 @@ source:
       # Inside Docker Compose, the Postgres service is addressable as "postgres".
       # Change to a hostname/IP for external/cloud Postgres instances.
       hostPort: "postgres:5432"
-      username: "${POSTGRES_USER:-datahub}"
-      password: "${POSTGRES_PASSWORD:-datahub123}"
+      username: "${POSTGRES_USER:-datalens}"
+      password: "${POSTGRES_PASSWORD:-datalens123}"
       database: "${POSTGRES_DB:-retail}"
       # sslMode: disable | allow | prefer | require | verify-ca | verify-full
       sslMode: disable

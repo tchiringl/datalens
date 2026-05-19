@@ -1,7 +1,7 @@
-name: datahub_cdm
+name: datalens_cdm
 version: '1.0.0'
 config-version: 2
-profile: datahub_trino
+profile: datalens_trino
 
 model-paths: ["models"]
 test-paths: ["tests"]
@@ -12,7 +12,7 @@ target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
 models:
-  datahub_cdm:
+  datalens_cdm:
     staging:
       +materialized: table
       +schema: staging

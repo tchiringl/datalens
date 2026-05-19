@@ -5,8 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from routers import assessment, sources, pipelines, dq, cdm, health, mock
 
 app = FastAPI(
-    title="DataHub API",
-    description="Retail AI Data Hub - Backend API Gateway",
+    title="Data Lens API",
+    description="Retail AI Data Lens - Backend API Gateway",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
