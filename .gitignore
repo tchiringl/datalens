@@ -38,6 +38,9 @@ Thumbs.db
 
 # Profiling reports
 profiling/reports/
+api/profiling/reports/
+api/profiling/reports/*.html
+api/profiling/reports/manifest.json
 
 # OpenMetadata tokens
 openmetadata/ingestion/*.token
