@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: profile_fact_orders
+    description: >
+      Daily column-level profile statistics for fact_orders.
+      Tracks null rates, distinct counts, row counts, and numeric distributions.
+      Replaces ydata-profiling HTML reports with version-controlled dbt models.
+
+  - name: profile_dim_customers
+    description: >
+      Daily profile statistics for dim_customers.
+      Tracks completeness (null rates), cardinality, and segment distribution.
+
+  - name: profile_fact_inventory
+    description: >
+      Daily inventory health profile.
+      Tracks zero-stock rates, negative available quantity, and snapshot coverage.
+
+  - name: profile_fact_returns
+    description: >
+      Daily returns profile.
+      Tracks return rate vs total orders, refund distributions, and return date range.
