@@ -111,7 +111,7 @@ services:
   # in PostgreSQL and resolves data file paths on MinIO S3.
   # ---------------------------------------------------------------------------
   hive-metastore:
-    image: bitsondatadev/hive-metastore:3.1.2
+    image: bitsondatadev/hive-metastore:latest
     container_name: datalens-hive-metastore
     restart: unless-stopped
     ports:
