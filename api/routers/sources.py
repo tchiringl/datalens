@@ -14,6 +14,7 @@ GET    /api/sources/{id}/profile       profiling status for a source
 
 import asyncio
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -25,6 +26,9 @@ from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
 router = APIRouter()
+
+_table_count_cache: dict[str, tuple[int, float]] = {}
+_TABLE_COUNT_TTL = 60.0
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -126,12 +130,17 @@ def _om_service_to_response(svc: Dict[str, Any]) -> SourceResponse:
 
 
 async def _count_tables(om: OpenMetadataClient, service_name: str) -> int:
-    """Return table count for *service_name* without fetching all columns."""
+    now = time.time()
+    cached = _table_count_cache.get(service_name)
+    if cached and now < cached[1]:
+        return cached[0]
     try:
         tables = await om.list_tables(service_name=service_name, limit=200)
-        return len(tables)
+        count = len(tables)
     except Exception:
-        return 0
+        count = 0
+    _table_count_cache[service_name] = (count, now + _TABLE_COUNT_TTL)
+    return count
 
 
 # ---------------------------------------------------------------------------
