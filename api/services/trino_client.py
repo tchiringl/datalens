@@ -12,6 +12,10 @@ import trino
 from trino.exceptions import TrinoQueryError
 
 
+def _quote_id(s: str) -> str:
+    return '"' + s.replace('"', '""') + '"'
+
+
 class TrinoClient:
     """Thin wrapper around the trino DB-API 2.0 driver."""
 
@@ -63,7 +67,7 @@ class TrinoClient:
 
     def get_table_row_count(self, catalog: str, schema: str, table: str) -> int:
         """Return the approximate row count for *catalog.schema.table*."""
-        query = f'SELECT count(*) AS cnt FROM "{catalog}"."{schema}"."{table}"'
+        query = f"SELECT count(*) AS cnt FROM {_quote_id(catalog)}.{_quote_id(schema)}.{_quote_id(table)}"
         try:
             results = self.execute(query)
             return int(results[0]["cnt"]) if results else 0

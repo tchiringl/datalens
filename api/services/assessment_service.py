@@ -44,7 +44,7 @@ def _run_query(catalog: str, schema: str, table: str, limit: int) -> pd.DataFram
     port = 8080
     user = "profiler"
     conn = trino.dbapi.connect(host=host, port=port, user=user, http_scheme="http")
-    query = f"SELECT * FROM {catalog}.{schema}.{table} LIMIT {max(1, limit)}"
+    query = f'SELECT * FROM "{catalog}"."{schema}"."{table}" LIMIT {max(1, limit)}'
     try:
         return pd.read_sql(query, conn)
     finally:
