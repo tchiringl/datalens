@@ -323,35 +323,6 @@ services:
           cpus: "1.0"
 
   # ---------------------------------------------------------------------------
-  # OpenMetadata Bootstrap — runs DB migrations once before the server starts.
-  # Required when using PostgreSQL backend (schema must be created first).
-  # ---------------------------------------------------------------------------
-  openmetadata-migrate:
-    image: openmetadata/server:1.6.1
-    container_name: datalens-openmetadata-migrate
-    command: "./bootstrap/bootstrap_storage.sh migrate-all"
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER}
-      DB_USER_PASSWORD: ${POSTGRES_PASSWORD}
-      OM_DATABASE: openmetadata
-      DB_DRIVER_CLASS: org.postgresql.Driver
-      DB_SCHEME: postgresql
-      DB_USE_SSL: "false"
-      DB_AUTHENTICATION_TYPE: basic
-      ELASTICSEARCH_HOST: elasticsearch
-      ELASTICSEARCH_PORT: 9200
-      ELASTICSEARCH_SCHEME: http
-    depends_on:
-      postgres:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
-    networks:
-      - datalens-net
-
-  # ---------------------------------------------------------------------------
   # OpenMetadata Server — metadata catalog and data governance platform.
   # Provides lineage, quality, and discovery features across all data sources.
   # ---------------------------------------------------------------------------
@@ -389,8 +360,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      openmetadata-migrate:
-        condition: service_completed_successfully
     networks:
       - datalens-net
     deploy:
