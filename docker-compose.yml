@@ -88,7 +88,7 @@ services:
   # MinIO Client (mc). Runs once after MinIO is healthy, then exits.
   # ---------------------------------------------------------------------------
   minio-init:
-    image: minio/mc:RELEASE.2026-03-07T18-48-32Z
+    image: minio/mc:RELEASE.2025-09-07T04-07-14Z
     container_name: datalens-minio-init
     depends_on:
       minio:
