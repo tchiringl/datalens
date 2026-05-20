@@ -5,7 +5,7 @@
 # Run `make help` to see all available targets.
 # =============================================================================
 
-.PHONY: help up down reset logs trino-cli dbt-run dbt-test validate status
+.PHONY: help up down reset logs trino-cli dbt-run dbt-test validate status bootstrap-om
 
 ## Show this help message
 help:
@@ -77,3 +77,7 @@ validate:
 ## Show the current status of all containers
 status:
 	docker compose ps
+
+## Bootstrap OpenMetadata JWT tokens into ingestion configs (run after make up)
+bootstrap-om:
+	@bash scripts/bootstrap_om_tokens.sh
