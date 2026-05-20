@@ -13,6 +13,7 @@ GET    /api/sources/{id}/profile       profiling status for a source
 """
 
 import asyncio
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from pydantic import BaseModel, Field
 from routers._pagination import pagination
 from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -138,7 +141,8 @@ async def _count_tables(om: OpenMetadataClient, service_name: str) -> int:
     try:
         tables = await om.list_tables(service_name=service_name, limit=200)
         count = len(tables)
-    except Exception:
+    except Exception as exc:
+        _log.warning("table count failed for %s: %s", service_name, exc)
         count = 0
     _table_count_cache[service_name] = (count, now + _TABLE_COUNT_TTL)
     return count
@@ -189,7 +193,8 @@ async def get_source(source_id: str) -> SourceDetail:
 
     try:
         tables = await om.list_tables(service_name=svc.get("name", ""), limit=200)
-    except Exception:
+    except Exception as exc:
+        _log.warning("list tables failed for source %s: %s", source_id, exc)
         tables = []
 
     return SourceDetail(
@@ -232,7 +237,7 @@ async def create_source(source: SourceCreate) -> SourceResponse:
             raise
         except Exception as exc:
             # Trino not reachable — warn but don't block registration
-            pass
+            _log.warning("Trino connection check failed for source %s: %s", source.name, exc)
 
     # Step 2 — register in OpenMetadata
     om = get_om_client()

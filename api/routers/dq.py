@@ -8,6 +8,7 @@ Fallback source:
 - dbt store-failures tables in postgres.dbt_test__audit
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -17,6 +18,8 @@ from pydantic import BaseModel
 from routers._pagination import pagination
 from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -158,7 +161,8 @@ def _results_from_dbt_store_failures() -> List[DQResult]:
     trino = TrinoClient()
     try:
         table_names = trino.list_tables("postgres", "dbt_test__audit")
-    except Exception:
+    except Exception as exc:
+        _log.warning("dbt_test__audit table list failed: %s", exc)
         return []
 
     results: List[DQResult] = []
@@ -191,8 +195,8 @@ async def _load_results() -> List[DQResult]:
         om_results = await _results_from_openmetadata()
         if om_results:
             return om_results
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.warning("OpenMetadata DQ results unavailable, falling back to dbt store-failures: %s", exc)
     return _results_from_dbt_store_failures()
 
 

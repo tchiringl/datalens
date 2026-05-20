@@ -10,6 +10,7 @@ GET /api/cdm/stats            summary stats: total rows per table
 """
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
@@ -20,6 +21,8 @@ from pydantic import BaseModel
 from routers._pagination import pagination
 from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -81,7 +84,8 @@ async def _get_cdm_table_names(trino: TrinoClient) -> List[str]:
     try:
         tables = await loop.run_in_executor(None, trino.list_tables, CDM_CATALOG, CDM_SCHEMA)
         return tables
-    except Exception:
+    except Exception as exc:
+        _log.warning("CDM table list failed (%s.%s): %s", CDM_CATALOG, CDM_SCHEMA, exc)
         return []
 
 
@@ -92,7 +96,8 @@ async def _get_row_count(trino: TrinoClient, table: str) -> Optional[int]:
             None, trino.get_table_row_count, CDM_CATALOG, CDM_SCHEMA, table
         )
         return count if count >= 0 else None
-    except Exception:
+    except Exception as exc:
+        _log.warning("row count failed for %s.%s.%s: %s", CDM_CATALOG, CDM_SCHEMA, table, exc)
         return None
 
 
@@ -111,7 +116,8 @@ async def _get_columns(trino: TrinoClient, table: str) -> List[CDMColumnInfo]:
             )
             for col in raw_cols
         ]
-    except Exception:
+    except Exception as exc:
+        _log.warning("column fetch failed for %s.%s.%s: %s", CDM_CATALOG, CDM_SCHEMA, table, exc)
         return []
 
 
@@ -149,7 +155,8 @@ def _load_dq_status_map(trino: TrinoClient) -> Dict[str, Dict[str, Any]]:
     dq_map: Dict[str, Dict[str, Any]] = {}
     try:
         audit_tables = trino.list_tables("postgres", "dbt_test__audit")
-    except Exception:
+    except Exception as exc:
+        _log.warning("dbt_test__audit table list failed: %s", exc)
         return dq_map
 
     for test_tbl in audit_tables:
