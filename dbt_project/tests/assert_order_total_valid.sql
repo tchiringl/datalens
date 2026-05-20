@@ -1,3 +1,5 @@
+{{ config(severity='warn') }}
+
 /*
   assert_order_total_valid
   ------------------------

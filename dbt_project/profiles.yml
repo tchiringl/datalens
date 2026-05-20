@@ -7,19 +7,19 @@ datalens_trino:
       host: "{{ env_var('TRINO_HOST', 'localhost') }}"
       port: "{{ env_var('TRINO_PORT', '8080') | int }}"
       user: admin
-      database: postgres
+      database: iceberg
       schema: cdm
       http_scheme: http
       session_properties:
-        query_max_run_time: 5d
+        query_max_run_time: 30m
     dev:
       type: trino
       method: none
       host: "{{ env_var('TRINO_HOST', 'localhost') }}"
       port: "{{ env_var('TRINO_PORT', '8080') | int }}"
       user: admin
-      database: postgres
+      database: iceberg
       schema: cdm
       http_scheme: http
       session_properties:
-        query_max_run_time: 5d
+        query_max_run_time: 30m

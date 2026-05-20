@@ -70,25 +70,32 @@ services:
     networks:
     - datalens-net
   hive-metastore:
-    image: bitsondatadev/hive-metastore:latest
+    image: naushadh/hive-metastore:latest
     container_name: datalens-hive-metastore
     restart: unless-stopped
     ports:
     - 9083:9083
     environment:
-      METASTORE_DB_HOSTNAME: postgres
-      METASTORE_DB_PORT: 5432
-      METASTORE_DB_NAME: ${POSTGRES_DB}
-      METASTORE_DB_USER: ${POSTGRES_USER}
-      METASTORE_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_HOST: postgres
+      DATABASE_DB: metastore
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: warehouse
+      S3_PREFIX: ""
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ln 2>/dev/null | grep ':9083' || ss -ln | grep ':9083'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
     - datalens-net
   trino:
@@ -111,7 +118,8 @@ services:
       retries: 10
       start_period: 30s
     depends_on:
-    - hive-metastore
+      hive-metastore:
+        condition: service_healthy
     networks:
     - datalens-net
   airflow-init:
@@ -136,6 +144,8 @@ services:
       TRINO_PORT: '8080'
       OM_HOST: openmetadata-server
       OM_PORT: '8585'
+      OM_ADMIN_EMAIL: ${OM_USERNAME:-admin@open-metadata.org}
+      OM_ADMIN_PASSWORD: ${OM_PASSWORD:-admin}
     entrypoint: "/bin/bash -c \"\n  airflow db migrate &&\n  (airflow users create\
       \ --username $$_AIRFLOW_WWW_USER_USERNAME --password $$_AIRFLOW_WWW_USER_PASSWORD\
       \ --email $$_AIRFLOW_WWW_USER_EMAIL --firstname $$_AIRFLOW_WWW_USER_FIRSTNAME\
@@ -168,6 +178,8 @@ services:
       TRINO_PORT: '8080'
       OM_HOST: openmetadata-server
       OM_PORT: '8585'
+      OM_ADMIN_EMAIL: ${OM_USERNAME:-admin@open-metadata.org}
+      OM_ADMIN_PASSWORD: ${OM_PASSWORD:-admin}
     command: webserver
     volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
@@ -203,6 +215,8 @@ services:
       TRINO_PORT: '8080'
       OM_HOST: openmetadata-server
       OM_PORT: '8585'
+      OM_ADMIN_EMAIL: ${OM_USERNAME:-admin@open-metadata.org}
+      OM_ADMIN_PASSWORD: ${OM_PASSWORD:-admin}
     command: scheduler
     volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
@@ -288,13 +302,13 @@ services:
       ELASTICSEARCH_HOST: elasticsearch
       ELASTICSEARCH_PORT: 9200
       ELASTICSEARCH_SCHEME: http
-      SERVER_HOST_API_URL: http://openmetadata-server:8585
+      SERVER_HOST_API_URL: http://openmetadata-server:8585/api
       AIRFLOW_HOST: http://airflow-webserver:8080
       PIPELINE_SERVICE_CLIENT_ENDPOINT: http://openmetadata-ingestion:8080
     healthcheck:
       test:
       - CMD-SHELL
-      - curl -sf http://localhost:8585/healthcheck || exit 1
+      - curl -sf http://localhost:8585/api/v1/system/version || exit 1
       interval: 15s
       timeout: 5s
       retries: 5
@@ -348,6 +362,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    volumes:
+    - ./dbt_project:/opt/airflow/dbt_project:ro
     depends_on:
       postgres:
         condition: service_healthy

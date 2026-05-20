@@ -215,7 +215,7 @@ openmetadata/ingestion/
 - Airflow needs `airflow-init` one-shot service to complete before webserver/scheduler
 - dbt profiles.yml points to internal Docker hostname `trino:8080`, not localhost
 - MinIO must initialize before Iceberg catalog works in Trino
-- `OM_USERNAME` must be `admin@openmetadata.org` (no hyphen) — confirmed from `user_entity` table. OM login POST `/api/v1/users/login` requires email field (base64-encoded password)
+- `OM_USERNAME` must be `admin@open-metadata.org` — confirmed from `user_entity` table. OM login POST `/api/v1/users/login` requires email field (base64-encoded password)
 - `AIRFLOW_PORT` inside Docker network is `8080` (not `8082` which is host-only mapping)
 - `openmetadata-ingestion` must run both `airflow webserver` AND `airflow scheduler` — scheduler alone doesn't expose HTTP port 8080 that OM server needs for `PIPELINE_SERVICE_CLIENT_ENDPOINT`
 - Env var names: code reads `OM_USERNAME`/`OM_PASSWORD`; `.env` must use these exact names (not `OM_ADMIN_USER`/`OM_ADMIN_PASSWORD`)

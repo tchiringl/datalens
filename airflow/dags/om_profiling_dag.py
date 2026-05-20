@@ -27,6 +27,7 @@ import os
 import time
 import logging
 import requests
+import base64
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 OM_HOST = os.getenv("OM_HOST", "openmetadata-server")
 OM_PORT = os.getenv("OM_PORT", "8585")
 OM_BASE_URL = f"http://{OM_HOST}:{OM_PORT}/api/v1"
-OM_ADMIN_EMAIL = os.getenv("OM_ADMIN_EMAIL", "admin@open-metadata.org")
+OM_ADMIN_EMAIL = os.getenv("OM_ADMIN_EMAIL", "admin@openmetadata.org")
 OM_ADMIN_PASSWORD = os.getenv("OM_ADMIN_PASSWORD", "admin")
 
 # Only trigger profiling for services whose type matches one of these
@@ -69,17 +70,24 @@ default_args = {
 def _get_om_token() -> str:
     """Authenticate against OpenMetadata and return a JWT bearer token."""
     url = f"{OM_BASE_URL}/users/login"
-    resp = requests.post(
-        url,
-        json={"email": OM_ADMIN_EMAIL, "password": OM_ADMIN_PASSWORD},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    token = resp.json().get("accessToken")
-    if not token:
-        raise ValueError(f"No accessToken in OM login response: {resp.text[:500]}")
-    logger.info("Obtained OM access token.")
-    return token
+    encoded_password = base64.b64encode(OM_ADMIN_PASSWORD.encode("utf-8")).decode("utf-8")
+    candidate_emails = [OM_ADMIN_EMAIL, "admin"]
+    last_error = None
+
+    for email in candidate_emails:
+        payload = {"email": email, "password": encoded_password}
+        try:
+            resp = requests.post(url, json=payload, timeout=30)
+            resp.raise_for_status()
+            token = resp.json().get("accessToken")
+            if token:
+                logger.info("Successfully obtained OM access token for user=%s.", email)
+                return token
+            last_error = ValueError(f"No accessToken in OM login response: {resp.text[:500]}")
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(f"OpenMetadata login failed for configured users. Last error: {last_error}")
 
 
 def _build_headers(token: str) -> Dict[str, str]:

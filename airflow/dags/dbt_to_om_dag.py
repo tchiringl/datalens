@@ -35,6 +35,13 @@ OM_BASE_URL = f"http://{OM_HOST}:{OM_PORT}/api/v1"
 OM_ADMIN_EMAIL = os.getenv("OM_ADMIN_EMAIL", "admin@open-metadata.org")
 OM_ADMIN_PASSWORD = os.getenv("OM_ADMIN_PASSWORD", "admin")
 
+# Ingestion Airflow (openmetadata-ingestion container) — used to poll DAG run
+# state when OM pipelineStatuses is not updated (ingestionPipelineFQN=null bug)
+OM_INGESTION_HOST = os.getenv("OM_INGESTION_HOST", "openmetadata-ingestion")
+OM_INGESTION_PORT = os.getenv("OM_INGESTION_PORT", "8080")
+OM_INGESTION_USER = os.getenv("OM_INGESTION_USER", "admin")
+OM_INGESTION_PASSWORD = os.getenv("OM_INGESTION_PASSWORD", "admin")
+
 # Names of ingestion pipelines that must already be registered in OM
 DBT_PIPELINE_NAME = os.getenv("OM_DBT_PIPELINE_NAME", "dbt_ingestion_pipeline")
 TRINO_PIPELINE_NAME = os.getenv("OM_TRINO_PIPELINE_NAME", "trino_metadata_pipeline")
@@ -60,7 +67,7 @@ def get_om_token() -> str:
     """Authenticate against OpenMetadata and return a JWT access token."""
     url = f"{OM_BASE_URL}/users/login"
     encoded_password = base64.b64encode(OM_ADMIN_PASSWORD.encode("utf-8")).decode("utf-8")
-    candidate_emails = [OM_ADMIN_EMAIL, "admin"]
+    candidate_emails = [OM_ADMIN_EMAIL, "admin@open-metadata.org", "admin@openmetadata.org"]
     last_error = None
 
     for email in candidate_emails:
@@ -109,14 +116,44 @@ def _trigger_pipeline(pipeline_id: str, headers: dict) -> None:
     logger.info("Pipeline %s triggered. Response: %s", pipeline_id, resp.status_code)
 
 
+def _poll_ingestion_airflow_dag_state(pipeline_name: str) -> str:
+    """
+    Query the openmetadata-ingestion Airflow for the latest DAG run state.
+    Returns Airflow state ('success', 'failed', 'running', 'queued', 'unknown').
+    Used as fallback when OM pipelineStatuses is not updated.
+    """
+    url = (
+        f"http://{OM_INGESTION_HOST}:{OM_INGESTION_PORT}"
+        f"/api/v1/dags/{pipeline_name}/dagRuns"
+    )
+    try:
+        resp = requests.get(
+            url,
+            params={"limit": 1, "order_by": "-execution_date"},
+            auth=(OM_INGESTION_USER, OM_INGESTION_PASSWORD),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        runs = resp.json().get("dag_runs", [])
+        if runs:
+            return runs[0].get("state", "unknown")
+    except Exception as exc:
+        logger.debug("Ingestion Airflow DAG state check failed: %s", exc)
+    return "unknown"
+
+
 def _poll_pipeline_status(
     pipeline_id: str,
     headers: dict,
+    pipeline_name: str = "",
     timeout_seconds: int = 1200,
     poll_interval: int = 30,
 ) -> str:
     """
-    Poll the pipeline status until it reaches a terminal state or times out.
+    Poll until the pipeline reaches a terminal state or times out.
+    Primary source: OM pipelineStatuses API.
+    Fallback: ingestion Airflow DAG run state (when OM status stays 'unknown'
+    due to ingestionPipelineFQN=null in generated configs).
     Returns the final status string.
     """
     url = f"{OM_BASE_URL}/services/ingestionPipelines/{pipeline_id}"
@@ -128,10 +165,19 @@ def _poll_pipeline_status(
         resp.raise_for_status()
         pipeline_status = resp.json().get("pipelineStatuses", {})
         last_status = pipeline_status.get("pipelineState", "unknown")
-        logger.info("Pipeline %s status: %s", pipeline_id, last_status)
+        logger.info("Pipeline %s OM status: %s", pipeline_id, last_status)
 
         if last_status in ("success", "failed", "partialSuccess"):
             return last_status
+
+        # Fallback: when OM doesn't update pipelineStatuses, check ingestion Airflow
+        if last_status == "unknown" and pipeline_name:
+            af_state = _poll_ingestion_airflow_dag_state(pipeline_name)
+            logger.info("Pipeline %s ingestion Airflow state: %s", pipeline_name, af_state)
+            if af_state == "success":
+                return "success"
+            if af_state == "failed":
+                return "failed"
 
         time.sleep(poll_interval)
 
@@ -206,7 +252,7 @@ def trigger_om_dbt_ingestion(**context) -> None:
     _trigger_pipeline(pipeline_id, headers)
 
     # Poll to completion (allow up to 20 min for large projects)
-    final_status = _poll_pipeline_status(pipeline_id, headers, timeout_seconds=1200)
+    final_status = _poll_pipeline_status(pipeline_id, headers, pipeline_name=DBT_PIPELINE_NAME, timeout_seconds=1200)
     logger.info("dbt ingestion pipeline finished with status: %s", final_status)
 
     if final_status == "failed":
@@ -240,7 +286,7 @@ def trigger_om_trino_ingestion(**context) -> None:
     _trigger_pipeline(pipeline_id, headers)
 
     # Poll to completion (allow up to 20 min)
-    final_status = _poll_pipeline_status(pipeline_id, headers, timeout_seconds=1200)
+    final_status = _poll_pipeline_status(pipeline_id, headers, pipeline_name=TRINO_PIPELINE_NAME, timeout_seconds=1200)
     logger.info("Trino ingestion pipeline finished with status: %s", final_status)
 
     if final_status == "failed":
@@ -358,8 +404,9 @@ Set `schedule_interval` to a cron string to also run on a schedule.
             f"cd {DBT_PROJECT_DIR} && "
             f"dbt test --store-failures --profiles-dir {DBT_PROJECT_DIR} --target prod"
         ),
+        execution_timeout=timedelta(minutes=30),
         on_failure_callback=_on_dbt_test_failure,
-        doc_md="Execute all dbt schema / data tests. Failures are stored in a test failures table.",
+        doc_md="Execute all dbt schema / data tests. Failures are stored in iceberg.dbt_test__failures.",
     )
 
     # -----------------------------------------------------------------------

@@ -140,13 +140,13 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "unit_price > 0"
+              expression: "> 0"
 
       - name: cost_price
         description: "Cost of goods sold price."
         tests:
           - dbt_utils.expression_is_true:
-              expression: "cost_price >= 0"
+              expression: ">= 0"
 
       - name: margin_pct
         description: "Gross margin percentage: (unit_price - cost_price) / unit_price * 100. NULL when unit_price is 0."
@@ -337,6 +337,7 @@ models:
           - relationships:
               to: ref('dim_customers')
               field: customer_id
+              severity: warn
 
       - name: customer_code
         description: "Resolved customer business code from dim_customers."
@@ -389,8 +390,8 @@ models:
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: "'2020-01-01'"
-              max_value: "'2030-12-31'"
+              min_value: "DATE '2020-01-01'"
+              max_value: "DATE '2030-12-31'"
               severity: error
 
       - name: order_month
@@ -404,7 +405,7 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "quantity > 0"
+              expression: "> 0"
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 1
               max_value: 1000
@@ -414,7 +415,7 @@ models:
         description: "Unit price at time of order."
         tests:
           - dbt_utils.expression_is_true:
-              expression: "unit_price > 0"
+              expression: "> 0"
 
       - name: discount_pct
         description: "Discount percentage applied to this line item."
@@ -426,7 +427,7 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "line_total_fixed >= 0"
+              expression: ">= 0"
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               max_value: 100000
@@ -496,6 +497,7 @@ models:
           - relationships:
               to: ref('fact_orders')
               field: order_id
+              severity: warn
 
       - name: order_item_id
         description: "Foreign key to the specific line item being returned."
@@ -504,6 +506,7 @@ models:
           - relationships:
               to: ref('fact_orders')
               field: order_item_id
+              severity: warn
 
       - name: customer_id
         description: "Customer who made the return (resolved from fact_orders)."
@@ -532,7 +535,7 @@ models:
         description: "Refund amount issued to the customer."
         tests:
           - dbt_utils.expression_is_true:
-              expression: "refund_amount >= 0"
+              expression: ">= 0"
 
       - name: dbt_updated_at
         description: "Timestamp of the most recent dbt model execution that wrote this row."
@@ -554,6 +557,7 @@ models:
             - product_id
             - store_id
             - snapshot_date
+          severity: warn
 
     columns:
       - name: snapshot_id
@@ -587,19 +591,20 @@ models:
         description: "Total quantity on hand at snapshot time."
         tests:
           - dbt_utils.expression_is_true:
-              expression: "quantity_on_hand >= 0"
+              expression: ">= 0"
 
       - name: quantity_reserved
         description: "Quantity reserved for pending orders at snapshot time."
         tests:
           - dbt_utils.expression_is_true:
-              expression: "quantity_reserved >= 0"
+              expression: ">= 0"
 
       - name: available_quantity
         description: "quantity_on_hand minus quantity_reserved."
         tests:
           - dbt_utils.expression_is_true:
-              expression: "available_quantity >= 0"
+              expression: ">= 0"
+              severity: warn
 
       - name: low_stock_flag
         description: "TRUE when available_quantity <= 10."

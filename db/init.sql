@@ -8,6 +8,7 @@
 CREATE DATABASE airflow;
 CREATE DATABASE openmetadata;
 CREATE DATABASE om_airflow;  -- dedicated DB for OpenMetadata ingestion Airflow instance
+CREATE DATABASE metastore;   -- dedicated DB for Hive Metastore (required by bitsondatadev/hive-metastore)
 
 -- =============================================================================
 -- SCHEMA SETUP

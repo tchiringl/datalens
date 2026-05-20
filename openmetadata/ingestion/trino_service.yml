@@ -31,12 +31,8 @@ source:
       # catalog is the *default* catalog; OM will also discover the others
       # listed in databaseFilterPattern below.
       catalog: iceberg
-      # Additional JDBC / connector parameters passed in the query string
-      params:
+      connectionArguments:
         http_scheme: http
-        # Uncomment and set to true when running Trino behind a reverse proxy
-        # with TLS termination:
-        # verify: "false"
 
   sourceConfig:
     config:
@@ -48,9 +44,6 @@ source:
       # Override table descriptions and column tags from the source if already
       # set in OM (useful when bootstrapping; set to false to preserve manual edits).
       overrideMetadata: false
-      # How many rows to use when computing table-level statistics during ingestion.
-      # Set to 0 to disable inline statistics (use the Profiler pipeline instead).
-      tableProfileSamplingCount: 0
 
       databaseFilterPattern:
         includes:
@@ -88,4 +81,4 @@ workflowConfig:
     authProvider: openmetadata
     securityConfig:
       # Replace with a long-lived bot token from OM Settings > Bots > ingestion-bot
-      jwtToken: "your-jwt-token-here"
+      jwtToken: "eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvcGVuLW1ldGFkYXRhLm9yZyIsInN1YiI6ImFkbWluIiwicm9sZXMiOlsiQWRtaW4iXSwiZW1haWwiOiJhZG1pbkBvcGVuLW1ldGFkYXRhLm9yZyIsImlzQm90IjpmYWxzZSwidG9rZW5UeXBlIjoiT01fVVNFUiIsImlhdCI6MTc3OTI4Nzc3MSwiZXhwIjoxNzc5MjkxMzcxfQ.YVEbIsSan99Uo5axa5y5HZ1s4S3oYmSOQyQDZeS4eBQmbQVzCZxEr5UAbWXAGjAPvjTIz-wbRNl_4ngXONF-mvju4sXpacQ197X1SLQX2l6tSLixvIk0JmfidB83U1dUcv1a0BbxIAO0qjhQPD140L2dvJ1jcyimyCXTqrnDgqpPYpRH1fX7mwqJDQEBklnbPY1Xa2T49ofO15Wni0wKHcqaZYJ3hs2lyG7bHDLcRCTcIhUCkBIqEjLuxwTwxEpixuWiP5lYB9r29l-3QGCYHpM0tPp7ltHB8ETodxxjOx0LD4YPoAPIaGDyFEm4siXkRp4VpGTKID6uuCXGmp23hA"

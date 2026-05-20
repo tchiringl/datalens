@@ -207,7 +207,7 @@ def load_to_iceberg(**context) -> None:
     conn = trino.dbapi.connect(
         host=TRINO_HOST,
         port=TRINO_PORT,
-        user="airflow",
+        user="admin",
         http_scheme="http",
     )
     cursor = conn.cursor()
