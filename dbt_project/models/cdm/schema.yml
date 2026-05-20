@@ -352,6 +352,9 @@ models:
               to: ref('dim_stores')
               field: store_id
               where: "store_id IS NOT NULL"
+          - alert_high_null_rate:
+              threshold: 0.5
+              severity: warn
 
       - name: store_name
         description: "Resolved store name from dim_stores."
