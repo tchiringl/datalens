@@ -160,16 +160,6 @@ export interface DashboardStats {
   pipeline_success_today: number
 }
 
-export interface AssessmentReport {
-  source_id: string
-  table_fqn: string
-  file_name: string
-  report_url: string
-  row_count_profiled: number
-  column_count: number
-  created_at: string
-}
-
 // ─── API clients ──────────────────────────────────────────────────────────────
 
 export const sourcesApi = {
@@ -209,19 +199,6 @@ export const cdmApi = {
 export const mockDataApi = {
   getStats: (): Promise<DashboardStats> => mockApi.get('/stats').then(r => r.data),
   getActivity: (): Promise<ActivityEvent[]> => mockApi.get('/activity').then(r => r.data),
-}
-
-export const assessmentApi = {
-  listReports: (sourceId?: string): Promise<AssessmentReport[]> =>
-    api
-      .get('/assessment/reports', { params: sourceId ? { source_id: sourceId } : {} })
-      .then(r => r.data),
-  generateReport: (sourceId: string, tableLimit = 3, rowLimit = 20000) =>
-    api.post('/assessment/reports/generate', {
-      source_id: sourceId,
-      table_limit: tableLimit,
-      row_limit: rowLimit,
-    }),
 }
 
 // ─── Mock fallback data (used when API is unavailable) ────────────────────────

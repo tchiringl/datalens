@@ -1,8 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
-from routers import assessment, sources, pipelines, dq, cdm, health, mock
+from routers import sources, pipelines, dq, cdm, health, mock
 
 app = FastAPI(
     title="Data Lens API",
@@ -26,9 +25,3 @@ app.include_router(pipelines.router, prefix="/api/pipelines", tags=["Pipelines"]
 app.include_router(dq.router, prefix="/api/dq", tags=["Data Quality"])
 app.include_router(cdm.router, prefix="/api/cdm", tags=["CDM"])
 app.include_router(mock.router, prefix="/mock", tags=["Mock Data"])
-app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessment"])
-app.mount(
-    "/assessment-reports",
-    StaticFiles(directory="/app/profiling/reports", check_dir=False),
-    name="assessment-reports",
-)
