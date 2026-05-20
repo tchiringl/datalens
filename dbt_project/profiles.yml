@@ -12,7 +12,6 @@ datalens_trino:
       http_scheme: http
       session_properties:
         query_max_run_time: 5d
-        exchange_compression: true
     dev:
       type: trino
       method: none
@@ -24,4 +23,3 @@ datalens_trino:
       http_scheme: http
       session_properties:
         query_max_run_time: 5d
-        exchange_compression: true
