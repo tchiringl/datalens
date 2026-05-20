@@ -6,6 +6,7 @@ GET /health/detailed — per-service breakdown with latency measurements
 """
 
 import asyncio
+import base64
 import os
 import time
 from datetime import datetime, timezone
@@ -22,9 +23,11 @@ router = APIRouter()
 TRINO_HOST = os.getenv("TRINO_HOST", "trino")
 TRINO_PORT = os.getenv("TRINO_PORT", "8080")
 AIRFLOW_HOST = os.getenv("AIRFLOW_HOST", "airflow-webserver")
-AIRFLOW_PORT = "8082"
+AIRFLOW_PORT = os.getenv("AIRFLOW_PORT_INTERNAL", "8080")
 OM_HOST = os.getenv("OM_HOST", "openmetadata-server")
 OM_PORT = os.getenv("OM_PORT", "8585")
+OM_USERNAME = os.getenv("OM_USERNAME", "admin@openmetadata.org")
+OM_PASSWORD = os.getenv("OM_PASSWORD", "admin")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
@@ -101,12 +104,34 @@ async def _probe_airflow() -> Dict[str, Any]:
 
 
 async def _probe_openmetadata() -> Dict[str, Any]:
-    """Hit OpenMetadata's /api/v1/system/status endpoint."""
-    url = f"http://{OM_HOST}:{OM_PORT}/api/v1/system/status"
+    """Hit OpenMetadata's /api/v1/tables endpoint with auth."""
+    base_url = f"http://{OM_HOST}:{OM_PORT}/api/v1"
     t0 = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT) as client:
-            resp = await client.get(url)
+            # Get token
+            encoded_password = base64.b64encode(OM_PASSWORD.encode("utf-8")).decode("ascii")
+            token_resp = await client.post(
+                f"{base_url}/users/login",
+                json={"email": OM_USERNAME, "password": encoded_password},
+            )
+            if token_resp.status_code != 200:
+                latency_ms = round((time.monotonic() - t0) * 1000, 1)
+                return {
+                    "status": "unhealthy",
+                    "latency_ms": latency_ms,
+                    "error": f"Auth failed: HTTP {token_resp.status_code}",
+                }
+            
+            token = token_resp.json().get("accessToken")
+            headers = {"Authorization": f"Bearer {token}"}
+            
+            # Hit /tables endpoint
+            resp = await client.get(
+                f"{base_url}/tables",
+                params={"limit": 1},
+                headers=headers,
+            )
             latency_ms = round((time.monotonic() - t0) * 1000, 1)
             if resp.status_code == 200:
                 return {"status": "healthy", "latency_ms": latency_ms}

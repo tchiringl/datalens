@@ -18,7 +18,7 @@ OM_BASE_URL = (
 )
 
 # Default OpenMetadata admin credentials (non-auth / bot mode used in dev)
-_OM_USERNAME = os.getenv("OM_USERNAME", "admin")
+_OM_USERNAME = os.getenv("OM_USERNAME", "admin@openmetadata.org")
 _OM_PASSWORD = os.getenv("OM_PASSWORD", "admin")
 
 _TIMEOUT = 30.0
@@ -258,8 +258,9 @@ class OpenMetadataClient:
     # ------------------------------------------------------------------
 
     async def health(self) -> Dict[str, Any]:
-        """Return OpenMetadata /api/v1/system/status."""
+        """Check OpenMetadata server availability via /tables endpoint."""
         try:
-            return await self._get("/system/status")
+            data = await self._get("/tables", params={"limit": 1})
+            return {"status": "healthy"}
         except Exception as exc:
             return {"status": "error", "error": str(exc)}

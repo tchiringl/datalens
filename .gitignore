@@ -44,3 +44,5 @@ api/profiling/reports/manifest.json
 
 # OpenMetadata tokens
 openmetadata/ingestion/*.token
+
+CLAUDE.md
