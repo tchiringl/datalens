@@ -14,9 +14,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from routers._pagination import pagination
 from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
@@ -266,7 +267,7 @@ def _apply_dq_status(columns: List[CDMColumnInfo], model_dq: Dict[str, Any]) -> 
 
 
 @router.get("/models", response_model=List[CDMModelDetail], summary="List all CDM models")
-async def list_cdm_models() -> List[CDMModelDetail]:
+async def list_cdm_models(page: Dict[str, int] = Depends(pagination)) -> List[CDMModelDetail]:
     """List all dim_* and fact_* tables in the Trino CDM schema."""
     trino = TrinoClient()
     table_names = await _get_cdm_table_names(trino)
@@ -297,7 +298,8 @@ async def list_cdm_models() -> List[CDMModelDetail]:
         )
 
     models = await asyncio.gather(*[_build_model(t) for t in table_names], return_exceptions=True)
-    return [m for m in models if isinstance(m, CDMModelDetail)]
+    all_models = [m for m in models if isinstance(m, CDMModelDetail)]
+    return all_models[page["offset"] : page["offset"] + page["limit"]]
 
 
 @router.get("/models/{name}", response_model=CDMModelDetail, summary="Get CDM model details")

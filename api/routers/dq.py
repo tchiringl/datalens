@@ -11,9 +11,10 @@ Fallback source:
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from routers._pagination import pagination
 from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
@@ -196,8 +197,9 @@ async def _load_results() -> List[DQResult]:
 
 
 @router.get("/results", response_model=List[DQResult], summary="All DQ test results")
-async def get_all_dq_results() -> List[DQResult]:
-    return await _load_results()
+async def get_all_dq_results(page: Dict[str, int] = Depends(pagination)) -> List[DQResult]:
+    results = await _load_results()
+    return results[page["offset"] : page["offset"] + page["limit"]]
 
 
 @router.get("/summary", summary="Aggregate DQ summary")

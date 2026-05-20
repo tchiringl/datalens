@@ -19,9 +19,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from routers._pagination import pagination
 from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
@@ -149,7 +150,7 @@ async def _count_tables(om: OpenMetadataClient, service_name: str) -> int:
 
 
 @router.get("", response_model=List[SourceResponse], summary="List all data sources")
-async def list_sources() -> List[SourceResponse]:
+async def list_sources(page: Dict[str, int] = Depends(pagination)) -> List[SourceResponse]:
     """Return all database services registered in OpenMetadata."""
     om = get_om_client()
     try:
@@ -167,7 +168,8 @@ async def list_sources() -> List[SourceResponse]:
         return resp.model_copy(update={"table_count": count})
 
     results = await asyncio.gather(*[_enrich(s) for s in services], return_exceptions=True)
-    return [r for r in results if isinstance(r, SourceResponse)]
+    all_results = [r for r in results if isinstance(r, SourceResponse)]
+    return all_results[page["offset"] : page["offset"] + page["limit"]]
 
 
 @router.get("/{source_id}", response_model=SourceDetail, summary="Get source details")
