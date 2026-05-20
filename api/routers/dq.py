@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from services.om_client import OpenMetadataClient
+from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
 router = APIRouter()
@@ -81,7 +81,7 @@ def _table_to_model(table_fqn: str, default: str = "unknown_model") -> str:
 
 
 async def _results_from_openmetadata() -> List[DQResult]:
-    om = OpenMetadataClient()
+    om = get_om_client()
     test_cases = await om.get_dq_results()
     results: List[DQResult] = []
 

@@ -21,7 +21,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from services.om_client import OpenMetadataClient
+from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
 router = APIRouter()
@@ -142,7 +142,7 @@ async def _count_tables(om: OpenMetadataClient, service_name: str) -> int:
 @router.get("", response_model=List[SourceResponse], summary="List all data sources")
 async def list_sources() -> List[SourceResponse]:
     """Return all database services registered in OpenMetadata."""
-    om = OpenMetadataClient()
+    om = get_om_client()
     try:
         services = await om.list_services()
     except Exception as exc:
@@ -164,7 +164,7 @@ async def list_sources() -> List[SourceResponse]:
 @router.get("/{source_id}", response_model=SourceDetail, summary="Get source details")
 async def get_source(source_id: str) -> SourceDetail:
     """Return details for a single source including its table list."""
-    om = OpenMetadataClient()
+    om = get_om_client()
     try:
         svc = await om.get_service(source_id)
     except httpx.HTTPStatusError as exc:
@@ -224,7 +224,7 @@ async def create_source(source: SourceCreate) -> SourceResponse:
             pass
 
     # Step 2 — register in OpenMetadata
-    om = OpenMetadataClient()
+    om = get_om_client()
     service_body = _build_om_connection_config(source)
     try:
         created = await om.create_service(service_body)
@@ -251,7 +251,7 @@ async def create_source(source: SourceCreate) -> SourceResponse:
                summary="Remove a data source")
 async def delete_source(source_id: str) -> None:
     """Delete a source from OpenMetadata (and all its child entities)."""
-    om = OpenMetadataClient()
+    om = get_om_client()
     try:
         await om.delete_service(source_id)
     except Exception as exc:
@@ -268,7 +268,7 @@ async def sync_source(source_id: str) -> Dict[str, Any]:
     The endpoint looks for a pipeline whose name starts with *source_id*.
     If none is found it returns a 404.
     """
-    om = OpenMetadataClient()
+    om = get_om_client()
     try:
         pipelines = await om.list_ingestion_pipelines(service_name=source_id)
     except Exception as exc:
@@ -300,7 +300,7 @@ async def sync_source(source_id: str) -> Dict[str, Any]:
 @router.get("/{source_id}/tables", summary="List tables for a source")
 async def list_source_tables(source_id: str) -> Dict[str, Any]:
     """Return all tables discovered for this source."""
-    om = OpenMetadataClient()
+    om = get_om_client()
     try:
         tables = await om.list_tables(service_name=source_id, limit=500)
     except Exception as exc:
@@ -319,7 +319,7 @@ async def get_source_profile(source_id: str) -> Dict[str, Any]:
 
     Queries Trino for row counts and OpenMetadata for column-level profile data.
     """
-    om = OpenMetadataClient()
+    om = get_om_client()
     trino = TrinoClient()
 
     try:

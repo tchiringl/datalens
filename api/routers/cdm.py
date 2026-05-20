@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from services.om_client import OpenMetadataClient
+from services.om_client import OpenMetadataClient, get_om_client
 from services.trino_client import TrinoClient
 
 router = APIRouter()
@@ -304,7 +304,7 @@ async def list_cdm_models() -> List[CDMModelDetail]:
 async def get_cdm_model(name: str) -> CDMModelDetail:
     """Return details for a single CDM model including columns, row count, and lineage."""
     trino = TrinoClient()
-    om = OpenMetadataClient()
+    om = get_om_client()
 
     # Check the table exists in Trino
     table_names = await _get_cdm_table_names(trino)
@@ -371,7 +371,7 @@ async def get_cdm_lineage(table: str) -> Dict[str, Any]:
     *table* can be a short name (resolved to ``CDM_CATALOG.CDM_SCHEMA.table``)
     or a fully-qualified name.
     """
-    om = OpenMetadataClient()
+    om = get_om_client()
 
     # Build FQN if not already qualified
     if "." not in table:

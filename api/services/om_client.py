@@ -7,6 +7,7 @@ they need.
 """
 
 import os
+import time
 from base64 import b64encode
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,8 @@ class OpenMetadataClient:
     def __init__(self) -> None:
         self.base_url: str = OM_BASE_URL
         self._token: Optional[str] = None
+        self._token_expiry: float = 0.0
+        self._http: httpx.AsyncClient = httpx.AsyncClient(timeout=_TIMEOUT)
 
     # ------------------------------------------------------------------
     # Auth
@@ -36,18 +39,18 @@ class OpenMetadataClient:
 
     async def get_token(self) -> str:
         """Obtain (or return cached) a JWT bearer token from OM."""
-        if self._token:
+        if self._token and time.time() < self._token_expiry - 60:
             return self._token
 
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            encoded_password = b64encode(_OM_PASSWORD.encode("utf-8")).decode("ascii")
-            resp = await client.post(
-                f"{self.base_url}/users/login",
-                json={"email": _OM_USERNAME, "password": encoded_password},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._token = data.get("accessToken") or data.get("token", "")
+        encoded_password = b64encode(_OM_PASSWORD.encode("utf-8")).decode("ascii")
+        resp = await self._http.post(
+            f"{self.base_url}/users/login",
+            json={"email": _OM_USERNAME, "password": encoded_password},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._token = data.get("accessToken") or data.get("token", "")
+        self._token_expiry = time.time() + 3600.0
         return self._token
 
     async def _headers(self) -> Dict[str, str]:
@@ -61,42 +64,42 @@ class OpenMetadataClient:
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Authenticated GET helper. Retries once on 401 (token refresh)."""
         headers = await self._headers()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{self.base_url}{path}", headers=headers, params=params or {})
-            if resp.status_code == 401:
-                # Token expired — clear cache and retry once
-                self._token = None
-                headers = await self._headers()
-                resp = await client.get(f"{self.base_url}{path}", headers=headers, params=params or {})
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._http.get(f"{self.base_url}{path}", headers=headers, params=params or {})
+        if resp.status_code == 401:
+            # Token expired — clear cache and retry once
+            self._token = None
+            self._token_expiry = 0.0
+            headers = await self._headers()
+            resp = await self._http.get(f"{self.base_url}{path}", headers=headers, params=params or {})
+        resp.raise_for_status()
+        return resp.json()
 
     async def _post(self, path: str, body: Dict[str, Any]) -> Any:
         headers = await self._headers()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(f"{self.base_url}{path}", headers=headers, json=body)
-            if resp.status_code == 401:
-                self._token = None
-                headers = await self._headers()
-                resp = await client.post(f"{self.base_url}{path}", headers=headers, json=body)
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._http.post(f"{self.base_url}{path}", headers=headers, json=body)
+        if resp.status_code == 401:
+            self._token = None
+            self._token_expiry = 0.0
+            headers = await self._headers()
+            resp = await self._http.post(f"{self.base_url}{path}", headers=headers, json=body)
+        resp.raise_for_status()
+        return resp.json()
 
     async def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> None:
         headers = await self._headers()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.delete(
+        resp = await self._http.delete(
+            f"{self.base_url}{path}", headers=headers, params=params or {}
+        )
+        if resp.status_code == 401:
+            self._token = None
+            self._token_expiry = 0.0
+            headers = await self._headers()
+            resp = await self._http.delete(
                 f"{self.base_url}{path}", headers=headers, params=params or {}
             )
-            if resp.status_code == 401:
-                self._token = None
-                headers = await self._headers()
-                resp = await client.delete(
-                    f"{self.base_url}{path}", headers=headers, params=params or {}
-                )
-            # 404 is fine for idempotent deletes
-            if resp.status_code not in (200, 204, 404):
-                resp.raise_for_status()
+        # 404 is fine for idempotent deletes
+        if resp.status_code not in (200, 204, 404):
+            resp.raise_for_status()
 
     # ------------------------------------------------------------------
     # Database Services (sources)
@@ -263,3 +266,18 @@ class OpenMetadataClient:
             return {"status": "healthy"}
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Module-level singleton
+# ---------------------------------------------------------------------------
+
+_om_client: Optional[OpenMetadataClient] = None
+
+
+def get_om_client() -> OpenMetadataClient:
+    """Return the module-level singleton OpenMetadataClient instance."""
+    global _om_client
+    if _om_client is None:
+        _om_client = OpenMetadataClient()
+    return _om_client
