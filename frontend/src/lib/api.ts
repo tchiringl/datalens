@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api', timeout: 10000 })
+const api = axios.create({ baseURL: '/api/v1', timeout: 10000 })
 const mockApi = axios.create({ baseURL: '/mock', timeout: 5000 })
 
 // ─── TypeScript types ─────────────────────────────────────────────────────────

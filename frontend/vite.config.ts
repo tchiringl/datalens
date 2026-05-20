@@ -7,7 +7,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     proxy: {
-      '/api': { target: 'http://api:8000', changeOrigin: true },
+      '/api/v1': { target: 'http://api:8000', changeOrigin: true },
       '/mock': { target: 'http://api:8000', changeOrigin: true },
     }
   }

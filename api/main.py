@@ -55,8 +55,8 @@ async def request_id_middleware(request: Request, call_next):
 
 
 app.include_router(health.router, tags=["Health"])
-app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
-app.include_router(pipelines.router, prefix="/api/pipelines", tags=["Pipelines"])
-app.include_router(dq.router, prefix="/api/dq", tags=["Data Quality"])
-app.include_router(cdm.router, prefix="/api/cdm", tags=["CDM"])
+app.include_router(sources.router, prefix="/api/v1/sources", tags=["Sources"])
+app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["Pipelines"])
+app.include_router(dq.router, prefix="/api/v1/dq", tags=["Data Quality"])
+app.include_router(cdm.router, prefix="/api/v1/cdm", tags=["CDM"])
 app.include_router(mock.router, prefix="/mock", tags=["Mock Data"])
