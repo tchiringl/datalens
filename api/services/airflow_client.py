@@ -21,7 +21,7 @@ _TIMEOUT = 30.0
 
 
 def _build_headers() -> Dict[str, str]:
-    raw = f"{os.getenv('AIRFLOW_ADMIN_USER', 'admin')}:{os.getenv('AIRFLOW_ADMIN_PASSWORD', 'admin123')}"
+    raw = f"{os.environ.get('AIRFLOW_ADMIN_USER', 'admin')}:{os.environ['AIRFLOW_ADMIN_PASSWORD']}"
     creds = base64.b64encode(raw.encode()).decode()
     return {
         "Authorization": f"Basic {creds}",

@@ -17,9 +17,8 @@ OM_BASE_URL = (
     f"{os.getenv('OM_PORT', '8585')}/api/v1"
 )
 
-# Default OpenMetadata admin credentials (non-auth / bot mode used in dev)
-_OM_USERNAME = os.getenv("OM_USERNAME", "admin@openmetadata.org")
-_OM_PASSWORD = os.getenv("OM_PASSWORD", "admin")
+_OM_USERNAME = os.environ.get("OM_USERNAME", "admin@openmetadata.org")
+_OM_PASSWORD = os.environ["OM_PASSWORD"]
 
 _TIMEOUT = 30.0
 
