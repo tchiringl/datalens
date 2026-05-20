@@ -274,7 +274,7 @@ always up-to-date.
 
 **Task order:**
 ```
-dbt_deps → dbt_run_staging → dbt_run_cdm → dbt_test
+dbt_deps → dbt_run_staging → dbt_run_cdm → dbt_run_profiling → dbt_test
          → dbt_docs_generate → om_dbt_ingestion → om_trino_ingestion
 ```
 
@@ -337,6 +337,19 @@ Set `schedule_interval` to a cron string to also run on a schedule.
     )
 
     # -----------------------------------------------------------------------
+    # Step 3b – Run profiling models (column-level stats for each CDM table)
+    # -----------------------------------------------------------------------
+    dbt_run_profiling = BashOperator(
+        task_id="dbt_run_profiling",
+        bash_command=(
+            f"cd {DBT_PROJECT_DIR} && "
+            f"dbt run --select profiling --profiles-dir {DBT_PROJECT_DIR} --target prod"
+        ),
+        execution_timeout=timedelta(minutes=30),
+        doc_md="Build profiling models — null rates, distinct counts, distribution stats per CDM table.",
+    )
+
+    # -----------------------------------------------------------------------
     # Step 4 – Run all tests, persist failures to a table for inspection
     # -----------------------------------------------------------------------
     dbt_test = BashOperator(
@@ -396,6 +409,7 @@ Set `schedule_interval` to a cron string to also run on a schedule.
         >> dbt_deps
         >> dbt_run_staging
         >> dbt_run_cdm
+        >> dbt_run_profiling
         >> dbt_test
         >> dbt_docs_generate
         >> om_dbt_ingestion
