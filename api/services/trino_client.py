@@ -77,21 +77,21 @@ class TrinoClient:
     def test_connection(self, catalog: str) -> bool:
         """Return True if Trino is reachable and *catalog* is accessible."""
         try:
-            results = self.execute(f"SHOW SCHEMAS FROM \"{catalog}\"")
+            results = self.execute(f"SHOW SCHEMAS FROM {_quote_id(catalog)}")
             return isinstance(results, list)
         except Exception:
             return False
 
     def list_schemas(self, catalog: str) -> List[str]:
         """Return a list of schema names in *catalog*."""
-        rows = self.execute(f'SHOW SCHEMAS FROM "{catalog}"')
+        rows = self.execute(f"SHOW SCHEMAS FROM {_quote_id(catalog)}")
         # The column name varies between Trino versions ("Schema" or "schema")
         key = list(rows[0].keys())[0] if rows else "Schema"
         return [row[key] for row in rows]
 
     def list_tables(self, catalog: str, schema: str) -> List[str]:
         """Return a list of table names in *catalog.schema*."""
-        rows = self.execute(f'SHOW TABLES FROM "{catalog}"."{schema}"')
+        rows = self.execute(f"SHOW TABLES FROM {_quote_id(catalog)}.{_quote_id(schema)}")
         key = list(rows[0].keys())[0] if rows else "Table"
         return [row[key] for row in rows]
 
@@ -100,7 +100,7 @@ class TrinoClient:
 
         Each dict has keys: ``name``, ``type``, ``nullable``, ``comment``.
         """
-        rows = self.execute(f'DESCRIBE "{catalog}"."{schema}"."{table}"')
+        rows = self.execute(f"DESCRIBE {_quote_id(catalog)}.{_quote_id(schema)}.{_quote_id(table)}")
         columns = []
         for row in rows:
             # Trino DESCRIBE returns: Column, Type, Extra, Comment
