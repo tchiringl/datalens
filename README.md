@@ -59,6 +59,31 @@ This repository contains the complete infrastructure layer for a Retail AI proof
 
 ---
 
+## Data Quality & Profiling
+
+DataLens uses **dbt-native profiling** instead of external tools. Profiling runs automatically as part of the Airflow DAG after CDM models complete.
+
+### Profiling Models
+
+Column-level statistics are stored as queryable tables in the `profiling` schema:
+
+| Model | What it measures |
+|-------|----------------|
+| `profile_fact_orders` | Null rates, distinct counts, min/max/avg/p95 for orders |
+| `profile_dim_customers` | Email/phone completeness, loyalty tier distribution |
+| `profile_fact_inventory` | Zero-stock %, negative availability, latest snapshot |
+| `profile_fact_returns` | Return rate vs orders, refund distribution |
+
+### Data Quality Tests
+
+Two tiers:
+- **ERROR** (blocks pipeline): `not_null`, `unique`, `relationships` — data integrity guarantees
+- **WARN** (flagged, logged): Statistical tests via `dbt_expectations` — range checks, mean assertions, regex validation
+
+See `docs/DATA-QUALITY.md` for full test inventory.
+
+---
+
 ## Prerequisites
 
 | Requirement | Version | Notes |
@@ -135,6 +160,17 @@ All entries should report `[OK]`. If a service shows `[FAIL]`, wait 30 seconds a
 | OpenMetadata | http://localhost:8585 |
 | MinIO Console | http://localhost:9001 |
 
+### Step 5.5: Bootstrap OpenMetadata Tokens
+
+After OpenMetadata is healthy, inject authentication tokens into ingestion configs:
+
+```bash
+export OM_PASSWORD=<your-om-admin-password>
+make bootstrap-om
+```
+
+This fetches a JWT token from OpenMetadata and patches all ingestion YAML files. Required before running ingestion pipelines.
+
 ---
 
 ## Service URLs Reference
@@ -155,7 +191,7 @@ All entries should report `[OK]`. If a service shows `[FAIL]`, wait 30 seconds a
 
 ## Component Descriptions
 
-### PostgreSQL 15
+### PostgreSQL 17
 Central relational database serving three roles: the retail operational database (`retail`), the Airflow metadata store (`airflow`), and the OpenMetadata schema (`openmetadata`). Initialised from `./db/init.sql` on first start.
 
 ### MinIO
@@ -166,20 +202,20 @@ S3-compatible object storage running locally. Two buckets are created automatica
 ### Hive Metastore
 Catalog service for Apache Iceberg. Stores table schemas, partition metadata, and S3 file paths in PostgreSQL. Trino connects to it over the Thrift protocol on port 9083.
 
-### Trino 426
+### Trino 460
 Distributed SQL query engine that federates queries across all registered catalogs:
 - **postgres** — direct access to the retail operational schema.
 - **iceberg** — Parquet files in MinIO via Hive Metastore.
 - **redshift** — Amazon Redshift (placeholder, activate when credentials available).
 - **bigquery** — Google BigQuery (placeholder, activate when credentials available).
 
-### Apache Airflow 2.9.1
+### Apache Airflow 2.10.5
 Workflow orchestration for ETL/ELT pipelines. Runs with the LocalExecutor backed by PostgreSQL. DAGs are stored in `./dags/` (mount this directory into the scheduler and webserver containers as needed).
 
-### Elasticsearch 8.11.0
+### Elasticsearch 8.18.0
 Full-text search and analytics engine used exclusively as the OpenMetadata index backend. Security is disabled for the local POC. Do not expose port 9200 externally.
 
-### OpenMetadata 1.3.1
+### OpenMetadata 1.6.1
 Open-source data catalog providing:
 - Automated metadata discovery and ingestion.
 - Column-level data lineage.
@@ -254,3 +290,23 @@ Run `make validate` and verify the following manually:
 9. **No persistent Airflow DAG directory** — DAG files need to be mounted into both `airflow-webserver` and `airflow-scheduler`. Add the volume `./dags:/opt/airflow/dags` to both services in `docker-compose.yml` once the DAG directory exists.
 
 10. **Resource contention** — Running all 13 services simultaneously requires at least 16 GB RAM allocated to Docker. On machines with less RAM, start only the services you need with `docker compose up -d postgres minio trino api`.
+
+### MinIO Community Edition — Archived April 2026
+
+The MinIO community edition repository was archived on April 25, 2026. This project is pinned to the last stable release `RELEASE.2026-03-14T22-28-04Z`. **Do not use `minio/minio:latest`** — it now points to an archived repository.
+
+For production deployments, consider migrating to AWS S3, MinIO Enterprise, or an alternative S3-compatible store.
+
+---
+
+## Upgrade Notes
+
+Changes made on `feature_add` branch (May 2026):
+
+- **All Docker images pinned** to specific versions (no more `latest` tags)
+- **MinIO critical fix** — pinned to last stable release before archival
+- **ydata-profiling removed** — replaced with dbt-native profiling models
+- **API routes versioned** — all endpoints now under `/api/v1/`
+- **SQL injection fixed** — all Trino SQL identifiers are now properly quoted
+- **Credentials secured** — `OM_PASSWORD` and `AIRFLOW_ADMIN_PASSWORD` are now required env vars (no insecure defaults)
+- **dbt test failures propagate** — DAG now fails if tests fail (previously silently ignored)

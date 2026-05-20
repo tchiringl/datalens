@@ -46,6 +46,11 @@ services:
       start_period: 30s
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
 
   # ---------------------------------------------------------------------------
   # MinIO — S3-compatible object store for the Iceberg data lake warehouse
@@ -72,6 +77,11 @@ services:
       start_period: 20s
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "0.5"
 
   # ---------------------------------------------------------------------------
   # MinIO Init — one-shot container that creates the required buckets using the
@@ -122,6 +132,11 @@ services:
         condition: service_healthy
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
 
   # ---------------------------------------------------------------------------
   # Trino 426 — distributed SQL query engine. Federates across PostgreSQL
@@ -146,6 +161,11 @@ services:
       - hive-metastore
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 5g
+          cpus: "2.0"
 
   # ---------------------------------------------------------------------------
   # Airflow Init — initialises the Airflow metadata database and creates the
@@ -226,6 +246,11 @@ services:
       - airflow-init
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
 
   # ---------------------------------------------------------------------------
   # Airflow Scheduler — continuously monitors DAGs and triggers task instances.
@@ -251,10 +276,21 @@ services:
       - ./airflow/dags:/opt/airflow/dags:ro
       - ./dbt_project:/opt/airflow/dbt_project
       - ./ingestion:/opt/airflow/ingestion:ro
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     depends_on:
       - airflow-init
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
 
   # ---------------------------------------------------------------------------
   # Elasticsearch 8 — search and indexing back-end for OpenMetadata.
@@ -280,6 +316,11 @@ services:
       start_period: 60s
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
 
   # ---------------------------------------------------------------------------
   # OpenMetadata Bootstrap — runs DB migrations once before the server starts.
@@ -337,6 +378,12 @@ services:
       SERVER_HOST_API_URL: http://openmetadata-server:8585
       AIRFLOW_HOST: http://airflow-webserver:8080
       PIPELINE_SERVICE_CLIENT_ENDPOINT: http://openmetadata-ingestion:8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8585/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -346,6 +393,11 @@ services:
         condition: service_completed_successfully
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+          cpus: "2.0"
 
   # ---------------------------------------------------------------------------
   # OpenMetadata Ingestion Init — initialises the Airflow metadata database
@@ -395,6 +447,12 @@ services:
         airflow webserver &
         exec airflow scheduler
       "
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
     depends_on:
       postgres:
         condition: service_healthy
@@ -404,6 +462,11 @@ services:
         condition: service_completed_successfully
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
 
   # ---------------------------------------------------------------------------
   # API — FastAPI application exposing the Retail AI endpoints. Queries Trino
@@ -440,6 +503,11 @@ services:
         condition: service_healthy
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
 
   # ---------------------------------------------------------------------------
   # Frontend — React/Vite single-page application serving the Retail AI
@@ -463,3 +531,8 @@ services:
         condition: service_healthy
     networks:
       - datalens-net
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
