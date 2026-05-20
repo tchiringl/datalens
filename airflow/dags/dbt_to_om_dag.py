@@ -148,6 +148,15 @@ def _poll_pipeline_status(
 # Task callables
 # ---------------------------------------------------------------------------
 
+_log = logging.getLogger(__name__)
+
+
+def _on_dbt_test_failure(context):
+    _log.error(
+        "dbt tests FAILED in DAG run %s — downstream OM ingestion skipped",
+        context.get("run_id", "unknown"),
+    )
+
 def trigger_om_dbt_ingestion(**context) -> None:
     """
     Reads the three dbt artifact files produced by `dbt docs generate`,
@@ -255,7 +264,7 @@ with DAG(
     catchup=False,
     tags=["datalens", "dbt", "cdm", "openmetadata"],
     max_active_runs=3,
-    dagrun_timeout=timedelta(hours=1),
+    dagrun_timeout=timedelta(hours=4),
     doc_md="""
 ## dbt → OpenMetadata DAG
 
@@ -334,8 +343,9 @@ Set `schedule_interval` to a cron string to also run on a schedule.
         task_id="dbt_test",
         bash_command=(
             f"cd {DBT_PROJECT_DIR} && "
-            f"dbt test --store-failures --profiles-dir {DBT_PROJECT_DIR} --target prod || true"
+            f"dbt test --store-failures --profiles-dir {DBT_PROJECT_DIR} --target prod"
         ),
+        on_failure_callback=_on_dbt_test_failure,
         doc_md="Execute all dbt schema / data tests. Failures are stored in a test failures table.",
     )
 
