@@ -15,5 +15,5 @@ RUN pip install --no-cache-dir -r /tmp/airflow-requirements.txt
 
 # Install dbt with Trino adapter
 RUN pip install --no-cache-dir \
-    dbt-core==1.8.0 \
-    dbt-trino==1.8.0
+    dbt-core==1.9.4 \
+    dbt-trino==1.9.2
