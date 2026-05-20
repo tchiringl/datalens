@@ -34,6 +34,12 @@ models:
           with 'unknown@noemail.com' in the staging layer.
         tests:
           - not_null
+          - dbt_expectations.expect_column_values_to_match_regex:
+              regex: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+              severity: warn
+          - dbt_expectations.expect_column_values_to_not_be_null:
+              mostly: 0.95
+              severity: warn
 
       - name: has_email
         description: "TRUE if the customer supplied a real email address; FALSE if it was NULL in the source."
@@ -303,6 +309,11 @@ models:
       Includes a data quality flag (had_line_total_issue) propagated from
       the staging layer to identify rows where line_total was recalculated.
 
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1000
+          severity: warn
+
     columns:
       - name: order_item_id
         description: "Surrogate primary key — unique identifier per order line item."
@@ -375,6 +386,10 @@ models:
         description: "Date the order was placed."
         tests:
           - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'2020-01-01'"
+              max_value: "'2030-12-31'"
+              severity: error
 
       - name: order_month
         description: "Order month truncated to first of month (for aggregation)."
@@ -388,6 +403,10 @@ models:
           - not_null
           - dbt_utils.expression_is_true:
               expression: "quantity > 0"
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 1000
+              severity: warn
 
       - name: unit_price
         description: "Unit price at time of order."
@@ -406,6 +425,14 @@ models:
           - not_null
           - dbt_utils.expression_is_true:
               expression: "line_total_fixed >= 0"
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000
+              severity: warn
+          - dbt_expectations.expect_column_mean_to_be_between:
+              min_value: 10
+              max_value: 5000
+              severity: warn
 
       - name: subtotal
         description: "Order-level subtotal (from order header)."
@@ -472,6 +499,9 @@ models:
         description: "Foreign key to the specific line item being returned."
         tests:
           - not_null
+          - relationships:
+              to: ref('fact_orders')
+              field: order_item_id
 
       - name: customer_id
         description: "Customer who made the return (resolved from fact_orders)."
@@ -515,6 +545,13 @@ models:
       Incrementally loaded by snapshot_date.
       Useful for trend analysis of stock levels, low-stock alerting, and
       reorder cadence analysis.
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - product_id
+            - store_id
+            - snapshot_date
 
     columns:
       - name: snapshot_id
