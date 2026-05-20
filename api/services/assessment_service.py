@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from services.om_client import OpenMetadataClient
+from services.trino_client import _quote_id
 
 REPORTS_DIR = Path("/app/profiling/reports")
 MANIFEST_PATH = Path("/app/profiling/reports/manifest.json")
@@ -44,7 +45,7 @@ def _run_query(catalog: str, schema: str, table: str, limit: int) -> pd.DataFram
     port = 8080
     user = "profiler"
     conn = trino.dbapi.connect(host=host, port=port, user=user, http_scheme="http")
-    query = f'SELECT * FROM "{catalog}"."{schema}"."{table}" LIMIT {max(1, limit)}'
+    query = f"SELECT * FROM {_quote_id(catalog)}.{_quote_id(schema)}.{_quote_id(table)} LIMIT {max(1, limit)}"
     try:
         return pd.read_sql(query, conn)
     finally:
