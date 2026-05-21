@@ -30,7 +30,7 @@ services:
     container_name: datalens-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -56,8 +56,8 @@ services:
     container_name: datalens-minio
     restart: unless-stopped
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console
+      - "9002:9000"   # S3 API
+      - "9003:9001"   # Web console
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -105,7 +105,7 @@ services:
     container_name: datalens-hive-metastore
     restart: unless-stopped
     ports:
-      - "9083:9083"
+      - "9084:9083"
     environment:
       METASTORE_DB_HOSTNAME: postgres
       METASTORE_DB_PORT: 5432
@@ -132,7 +132,7 @@ services:
     container_name: datalens-trino
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8084:8080"
     volumes:
       - ./infra/trino/catalog:/etc/trino/catalog:ro
       - ./infra/trino/etc:/etc/trino
@@ -200,7 +200,7 @@ services:
     container_name: datalens-airflow-webserver
     restart: unless-stopped
     ports:
-      - "8082:8080"
+      - "8085:8080"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${AIRFLOW_DB:-airflow}
@@ -265,7 +265,7 @@ services:
     container_name: datalens-elasticsearch
     restart: unless-stopped
     ports:
-      - "9200:9200"
+      - "9201:9200"
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -314,7 +314,7 @@ services:
     container_name: datalens-openmetadata-server
     restart: unless-stopped
     ports:
-      - "8585:8585"
+      - "8586:8585"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -351,7 +351,7 @@ services:
     container_name: datalens-openmetadata-ingestion
     restart: unless-stopped
     ports:
-      - "8083:8080"
+      - "8087:8080"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       # Use a DEDICATED database to avoid conflicts with the main Airflow instance
@@ -378,7 +378,7 @@ services:
     container_name: datalens-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./api:/app
       - ./ingestion:/app/ingestion:ro
@@ -414,12 +414,12 @@ services:
     container_name: datalens-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules   # anonymous volume shadows host node_modules (glibc vs musl)
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8001}
     depends_on:
       api:
         condition: service_healthy

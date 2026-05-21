@@ -60,18 +60,19 @@ validate:
 	    printf "  [FAIL] %-30s %s\n" "$$label" "$$url"; \
 	  fi; \
 	}; \
-	_check "PostgreSQL (pg_isready)" "N/A — use: docker compose exec postgres pg_isready"; \
-	_check "MinIO S3 API"            "http://localhost:9000/minio/health/live"; \
-	_check "MinIO Console"           "http://localhost:9001"; \
-	_check "Trino UI"                "http://localhost:8080/v1/info"; \
-	_check "Airflow Webserver"       "http://localhost:8082/health"; \
-	_check "Elasticsearch"           "http://localhost:9200/_cluster/health"; \
-	_check "OpenMetadata Server"     "http://localhost:8585"; \
-	_check "API /health"             "http://localhost:8000/health"; \
-	_check "Frontend"                "http://localhost:3000"
-	@echo ""
-	@echo "PostgreSQL status:"
-	@docker compose exec postgres pg_isready -U $${POSTGRES_USER:-datalens} || true
+	if docker compose exec postgres pg_isready -U $${POSTGRES_USER:-datalens} > /dev/null 2>&1; then \
+	  printf "  [OK]  %-30s %s\n" "PostgreSQL (pg_isready)" "docker compose exec postgres pg_isready"; \
+	else \
+	  printf "  [FAIL] %-30s %s\n" "PostgreSQL (pg_isready)" "docker compose exec postgres pg_isready"; \
+	fi; \
+	_check "MinIO S3 API"            "http://localhost:9002/minio/health/live"; \
+	_check "MinIO Console"           "http://localhost:9003"; \
+	_check "Trino UI"                "http://localhost:8084/v1/info"; \
+	_check "Airflow Webserver"       "http://localhost:8085/health"; \
+	_check "Elasticsearch"           "http://localhost:9201/_cluster/health"; \
+	_check "OpenMetadata Server"     "http://localhost:8586"; \
+	_check "API /health"             "http://localhost:8001/health"; \
+	_check "Frontend"                "http://localhost:3001"
 	@echo ""
 
 ## Show the current status of all containers
