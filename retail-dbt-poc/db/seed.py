@@ -56,9 +56,9 @@ def seed_stores(cur):
             fake.company(),
             random.choice(store_types),
             fake.city(),
-            fake.country(),
-            fake.state(),
-            fake.phone_number()[:20],
+            fake.country()[:100],
+            fake.state()[:100],
+            fake.phone_number()[:30],
             fake.company_email(),
             fake.date_between(start_date='-10y', end_date='-1y'),
             True,
@@ -121,8 +121,8 @@ def seed_suppliers(cur):
             fake.company(),
             fake.name(),
             fake.company_email(),
-            fake.phone_number()[:20],
-            fake.country(),
+            fake.phone_number()[:30],
+            fake.country()[:100],
             True,
         ))
     execute_batch(
@@ -191,7 +191,7 @@ def seed_customers(cur):
             fake.first_name(),
             fake.last_name(),
             email,
-            fake.phone_number()[:20],
+            fake.phone_number()[:30],
             random.choice(tiers),
             created_at,
             True,
@@ -533,12 +533,29 @@ def seed_inventory_snapshots(cur):
 # Main
 # ---------------------------------------------------------------------------
 def apply_schema(conn):
-    """Execute schema.sql to create tables if they don't exist."""
+    """Drop all tables then recreate from schema.sql (idempotent reset)."""
+    drop_sql = """
+    DROP TABLE IF EXISTS inventory_snapshots CASCADE;
+    DROP TABLE IF EXISTS loyalty_points CASCADE;
+    DROP TABLE IF EXISTS product_reviews CASCADE;
+    DROP TABLE IF EXISTS shipments CASCADE;
+    DROP TABLE IF EXISTS returns CASCADE;
+    DROP TABLE IF EXISTS order_items CASCADE;
+    DROP TABLE IF EXISTS orders CASCADE;
+    DROP TABLE IF EXISTS employees CASCADE;
+    DROP TABLE IF EXISTS promotions CASCADE;
+    DROP TABLE IF EXISTS customers CASCADE;
+    DROP TABLE IF EXISTS products CASCADE;
+    DROP TABLE IF EXISTS suppliers CASCADE;
+    DROP TABLE IF EXISTS product_categories CASCADE;
+    DROP TABLE IF EXISTS stores CASCADE;
+    """
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
     with open(schema_path) as f:
-        sql = f.read()
+        create_sql = f.read()
     with conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(drop_sql)
+        cur.execute(create_sql)
     conn.commit()
     print("Schema applied.")
 

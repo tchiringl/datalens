@@ -4,9 +4,9 @@ CREATE TABLE IF NOT EXISTS stores (
     name VARCHAR(100) NOT NULL,
     store_type VARCHAR(20) NOT NULL CHECK (store_type IN ('flagship', 'retail', 'outlet', 'online')),
     city VARCHAR(100) NOT NULL,
-    country VARCHAR(50) NOT NULL,
-    region VARCHAR(50),
-    phone VARCHAR(20),
+    country VARCHAR(100) NOT NULL,
+    region VARCHAR(100),
+    phone VARCHAR(30),
     email VARCHAR(100),
     opened_at DATE NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE
@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS suppliers (
     name VARCHAR(100) NOT NULL,
     contact_name VARCHAR(100),
     email VARCHAR(100),
-    phone VARCHAR(20),
-    country VARCHAR(50) NOT NULL,
+    phone VARCHAR(30),
+    country VARCHAR(100) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS customers (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(100),
-    phone VARCHAR(20),
+    phone VARCHAR(30),
     loyalty_tier VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (loyalty_tier IN ('standard', 'silver', 'gold', 'platinum')),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     is_active BOOLEAN NOT NULL DEFAULT TRUE
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS returns (
 CREATE TABLE IF NOT EXISTS shipments (
     shipment_id SERIAL PRIMARY KEY,
     order_id INTEGER NOT NULL REFERENCES orders(order_id),
-    carrier VARCHAR(50) NOT NULL,
+    carrier VARCHAR(100) NOT NULL,
     tracking_number VARCHAR(100),
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     shipped_at TIMESTAMP,
