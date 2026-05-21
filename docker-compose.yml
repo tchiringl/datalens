@@ -1,7 +1,7 @@
 # =============================================================================
-# DataLens — docker-compose.yml
-# Modernized: YAML anchors, resource limits, OpenSearch, apache/hive 4.0.1,
-# Airflow 3.x (api-server), non-root, minimized memory footprint.
+# DataLens — Minimal Dev Docker Compose Stack
+# 9 services, ~5.8GB total memory, no OpenMetadata/OpenSearch/Hive metastore
+# Iceberg catalog backed by Project Nessie (REST catalog)
 # =============================================================================
 
 x-airflow-common: &airflow-common
@@ -25,8 +25,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
     TRINO_HOST: trino
     TRINO_PORT: "8080"
-    OM_HOST: openmetadata-server
-    OM_PORT: "8585"
+    AIRFLOW_HOST: airflow-apiserver
+    AIRFLOW_PORT: "8080"
     PYTHONDONTWRITEBYTECODE: "1"
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
@@ -43,46 +43,43 @@ networks:
 volumes:
   postgres_data:
   minio_data:
-  opensearch_data:
   airflow_logs:
 
 services:
   # ---------------------------------------------------------------------------
-  # PostgreSQL — shared metadata store (airflow, openmetadata, hive, retail DB)
+  # PostgreSQL: metadata store for Airflow, Nessie, and retail DB
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:18.4-alpine
+    image: postgres:17-alpine
     container_name: datalens-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      POSTGRES_USER: ${POSTGRES_USER:-datalens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-datalens123}
+      POSTGRES_INITDB_ARGS: >-
+        --encoding=UTF8
+        --auth-local=scram-sha-256
     volumes:
-      - postgres_data:/var/lib/postgresql
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-datalens}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 10s
     deploy:
       resources:
         limits:
-          memory: 1g
+          memory: 768m
           cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
     networks:
       - datalens-net
 
   # ---------------------------------------------------------------------------
-  # MinIO — S3-compatible object store (Iceberg warehouse)
-  # Community ed. archived 2026-04 — pinned digest required.
+  # MinIO: S3-compatible object storage for Iceberg
   # ---------------------------------------------------------------------------
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -92,124 +89,80 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 10s
     deploy:
       resources:
         limits:
-          memory: 512m
+          memory: 384m
           cpus: "0.5"
-    security_opt:
-      - no-new-privileges:true
     networks:
       - datalens-net
 
+  # ---------------------------------------------------------------------------
+  # MinIO init: create S3 buckets
+  # ---------------------------------------------------------------------------
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: datalens-minio-init
     depends_on:
       minio:
         condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        mc alias set myminio http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
-        mc mb myminio/warehouse --ignore-existing &&
-        mc mb myminio/raw --ignore-existing &&
-        echo "MinIO buckets ready."
-    restart: "no"
+    entrypoint: sh
+    command: |
+      -c "
+      /usr/bin/mc config host add minio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123} &&
+      /usr/bin/mc mb --ignore-existing minio/${MINIO_BUCKET_WAREHOUSE:-warehouse} &&
+      /usr/bin/mc mb --ignore-existing minio/${MINIO_BUCKET_RAW:-raw}
+      "
+    restart: no
     networks:
       - datalens-net
 
   # ---------------------------------------------------------------------------
-  # Hive Metastore (apache/hive 4.0.1 standalone)
-  # Init job runs `schematool -initSchema` once; main service is metastore only.
+  # Project Nessie: REST catalog for Iceberg
   # ---------------------------------------------------------------------------
-  hive-metastore-init:
-    build:
-      context: ./hive
-      dockerfile: Dockerfile
-    image: datalens-hive:local
-    container_name: datalens-hive-metastore-init
-    user: hive
-    environment:
-      SERVICE_NAME: metastore
-      DB_DRIVER: postgres
-      SCHEMA_COMMAND: initSchema
-      SERVICE_OPTS: >-
-        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
-        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/${HIVE_DB:-metastore}
-        -Djavax.jdo.option.ConnectionUserName=${POSTGRES_USER}
-        -Djavax.jdo.option.ConnectionPassword=${POSTGRES_PASSWORD}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-    networks:
-      - datalens-net
-
-  hive-metastore:
-    build:
-      context: ./hive
-      dockerfile: Dockerfile
-    image: datalens-hive:local
-    container_name: datalens-hive-metastore
+  nessie:
+    image: projectnessie/nessie:latest
+    container_name: datalens-nessie
     restart: unless-stopped
     ports:
-      - "9083:9083"
-    user: hive
+      - "19120:19120"
     environment:
-      SERVICE_NAME: metastore
-      DB_DRIVER: postgres
-      SERVICE_OPTS: >-
-        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
-        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/${HIVE_DB:-metastore}
-        -Djavax.jdo.option.ConnectionUserName=${POSTGRES_USER}
-        -Djavax.jdo.option.ConnectionPassword=${POSTGRES_PASSWORD}
-        -Dfs.s3a.endpoint=http://minio:9000
-        -Dfs.s3a.access.key=${MINIO_ROOT_USER}
-        -Dfs.s3a.secret.key=${MINIO_ROOT_PASSWORD}
-        -Dfs.s3a.path.style.access=true
-        -Dfs.s3a.connection.ssl.enabled=false
+      QUARKUS_PROFILE: prod
+      NESSIE_VERSION_STORE_TYPE: JDBC
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER:-datalens}
+      QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-datalens123}
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/nessie
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-      hive-metastore-init:
-        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "ss -ltn | grep -q ':9083'"]
-      interval: 15s
+      test: ["CMD-SHELL", "curl -sf http://localhost:19120/api/v2/config || exit 1"]
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 5
+      start_period: 20s
     deploy:
       resources:
         limits:
-          memory: 1g
-          cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
+          memory: 384m
+          cpus: "0.5"
     networks:
       - datalens-net
 
   # ---------------------------------------------------------------------------
-  # Trino — federated query engine
+  # Trino: federated query engine (coordinator + worker)
   # ---------------------------------------------------------------------------
   trino:
     image: trinodb/trino:481
@@ -217,296 +170,95 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    depends_on:
+      minio:
+        condition: service_healthy
+      nessie:
+        condition: service_healthy
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
     volumes:
+      - ./infra/trino/etc:/etc/trino:ro
       - ./infra/trino/catalog:/etc/trino/catalog:ro
-      - ./infra/trino/etc:/etc/trino
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/info | grep -q '\"starting\":false' && exit 0 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
-    depends_on:
-      hive-metastore:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-          cpus: "2.0"
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - datalens-net
-
-  # ---------------------------------------------------------------------------
-  # OpenSearch 2.x — replaces Elasticsearch for OpenMetadata search backend.
-  # Smaller footprint and Apache 2.0 license.
-  # ---------------------------------------------------------------------------
-  opensearch:
-    image: opensearchproject/opensearch:2.19.5
-    container_name: datalens-opensearch
-    restart: unless-stopped
-    ports:
-      - "9200:9200"
-    environment:
-      discovery.type: single-node
-      DISABLE_SECURITY_PLUGIN: "true"
-      DISABLE_INSTALL_DEMO_CONFIG: "true"
-      OPENSEARCH_JAVA_OPTS: "-Xms256m -Xmx512m"
-      bootstrap.memory_lock: "true"
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'curl -sf http://localhost:9200/_cluster/health | grep -E ''"status":"(green|yellow)"''',
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 768m
-          cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - datalens-net
-
-  # ---------------------------------------------------------------------------
-  # Airflow 3.x — init / api-server / scheduler
-  # ---------------------------------------------------------------------------
-  airflow-init:
-    <<: *airflow-common
-    container_name: datalens-airflow-init
-    environment:
-      <<: *airflow-env
-      _AIRFLOW_WWW_USER_CREATE: "true"
-      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
-      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
-      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@datalens.local}
-      _AIRFLOW_WWW_USER_FIRSTNAME: Admin
-      _AIRFLOW_WWW_USER_LASTNAME: User
-      _AIRFLOW_WWW_USER_ROLE: Admin
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        airflow db migrate &&
-        (airflow users create \
-          --username "$$_AIRFLOW_WWW_USER_USERNAME" \
-          --password "$$_AIRFLOW_WWW_USER_PASSWORD" \
-          --email "$$_AIRFLOW_WWW_USER_EMAIL" \
-          --firstname "$$_AIRFLOW_WWW_USER_FIRSTNAME" \
-          --lastname "$$_AIRFLOW_WWW_USER_LASTNAME" \
-          --role "$$_AIRFLOW_WWW_USER_ROLE" || true) &&
-        echo "Airflow init complete."
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  airflow-apiserver:
-    <<: *airflow-common
-    container_name: datalens-airflow-apiserver
-    restart: unless-stopped
-    ports:
-      - "8082:8080"
-    command: api-server
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/version"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 45s
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-          cpus: "1.0"
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-
-  airflow-scheduler:
-    <<: *airflow-common
-    container_name: datalens-airflow-scheduler
-    restart: unless-stopped
-    command: scheduler
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "airflow jobs check --job-type SchedulerJob --hostname $$(hostname)",
-        ]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-          cpus: "1.0"
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-
-  airflow-dag-processor:
-    <<: *airflow-common
-    container_name: datalens-airflow-dag-processor
-    restart: unless-stopped
-    command: dag-processor
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-          cpus: "0.5"
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-
-  # ---------------------------------------------------------------------------
-  # OpenMetadata — server + ingestion (bundles its own Airflow 2.x)
-  # ---------------------------------------------------------------------------
-  openmetadata-server-init:
-    image: openmetadata/server:1.12.8
-    container_name: datalens-openmetadata-server-init
-    environment: &om-env
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER}
-      DB_USER_PASSWORD: ${POSTGRES_PASSWORD}
-      OM_DATABASE: openmetadata
-      DB_DRIVER_CLASS: org.postgresql.Driver
-      DB_SCHEME: postgresql
-      DB_USE_SSL: "false"
-      DB_AUTHENTICATION_TYPE: basic
-      SEARCH_TYPE: opensearch
-      ELASTICSEARCH_HOST: opensearch
-      ELASTICSEARCH_PORT: 9200
-      ELASTICSEARCH_SCHEME: http
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        ./bootstrap/openmetadata-ops.sh migrate &&
-        echo "OpenMetadata database migration complete."
-    restart: "no"
-    depends_on:
-      opensearch:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    networks:
-      - datalens-net
-
-  openmetadata-server:
-    image: openmetadata/server:1.12.8
-    container_name: datalens-openmetadata-server
-    restart: unless-stopped
-    ports:
-      - "8585:8585"
-    environment:
-      <<: *om-env
-      SERVER_HOST_API_URL: http://openmetadata-server:8585
-      AIRFLOW_HOST: http://airflow-apiserver:8080
-      PIPELINE_SERVICE_CLIENT_ENDPOINT: http://openmetadata-ingestion:8080
-      OPENMETADATA_CLUSTER_NAME: datalens
-    healthcheck:
-      test:
-        ["CMD-SHELL", "curl -sf http://localhost:8585/healthcheck || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 60s
     deploy:
       resources:
         limits:
           memory: 2g
-          cpus: "1.5"
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      openmetadata-server-init:
-        condition: service_completed_successfully
-    networks:
-      - datalens-net
-
-  openmetadata-ingestion-init:
-    image: openmetadata/ingestion:1.12.8
-    container_name: datalens-openmetadata-ingestion-init
-    environment: &om-ingestion-env
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/om_airflow
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${SECRET_KEY}
-      OPENMETADATA_SERVER_URL: http://openmetadata-server:8585
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        airflow db migrate &&
-        echo "OpenMetadata ingestion Airflow DB init complete."
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - datalens-net
-
-  openmetadata-ingestion:
-    image: openmetadata/ingestion:1.12.8
-    container_name: datalens-openmetadata-ingestion
-    restart: unless-stopped
-    ports:
-      - "8083:8080"
-    environment:
-      <<: *om-ingestion-env
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        airflow users create --username admin --firstname admin --lastname admin \
-          --password admin --email admin@openmetadata.org --role Admin || true &&
-        airflow webserver &
-        exec airflow scheduler
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 1500m
-          cpus: "1.0"
-    depends_on:
-      openmetadata-server:
-        condition: service_started
-      openmetadata-ingestion-init:
-        condition: service_completed_successfully
+          cpus: "2.0"
     networks:
       - datalens-net
 
   # ---------------------------------------------------------------------------
-  # FastAPI backend
+  # Airflow: workflow orchestration (init one-shot)
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    container_name: datalens-airflow-init
+    command: bash -c "airflow db migrate && airflow users create --username admin --password ${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname admin --lastname user --role Admin --email admin@example.com 2>/dev/null || true"
+    restart: no
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Airflow: API server
+  # ---------------------------------------------------------------------------
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: datalens-airflow-apiserver
+    command: api-server
+    ports:
+      - "8082:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+
+  # ---------------------------------------------------------------------------
+  # Airflow: scheduler
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: datalens-airflow-scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+
+  # ---------------------------------------------------------------------------
+  # Airflow: DAG processor (Airflow 3.x requirement)
+  # ---------------------------------------------------------------------------
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: datalens-airflow-dag-processor
+    command: dag-processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+
+  # ---------------------------------------------------------------------------
+  # FastAPI: backend API
   # ---------------------------------------------------------------------------
   api:
     build:
@@ -520,39 +272,43 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
-    volumes:
-      - ./api:/app
-      - ./ingestion:/app/ingestion:ro
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: postgres
-      TRINO_HOST: ${TRINO_HOST:-trino}
-      TRINO_PORT: ${TRINO_PORT:-8080}
-      TRINO_USER: ${TRINO_USER:-admin}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 768m
-          cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
     depends_on:
       postgres:
         condition: service_healthy
       trino:
         condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-datalens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-datalens123}
+      POSTGRES_DB: ${POSTGRES_DB:-retail}
+      TRINO_HOST: ${TRINO_HOST:-trino}
+      TRINO_PORT: ${TRINO_PORT:-8080}
+      TRINO_USER: ${TRINO_USER:-admin}
+      AIRFLOW_HOST: airflow-apiserver
+      AIRFLOW_PORT: "8080"
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./api:/app:ro
+      - ./ingestion:/app/ingestion:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
     networks:
       - datalens-net
 
   # ---------------------------------------------------------------------------
-  # React frontend (Vite dev server)
+  # React/Vite: frontend SPA
   # ---------------------------------------------------------------------------
   frontend:
     build:
@@ -566,20 +322,19 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-          cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
     depends_on:
       api:
         condition: service_healthy
+    environment:
+      VITE_API_BASE_URL: http://api:8000
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "1.0"
     networks:
       - datalens-net

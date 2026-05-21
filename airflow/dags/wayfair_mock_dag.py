@@ -13,8 +13,8 @@ Runs daily; catchup=True so historical dates are backfilled on first deploy.
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta
+
+from datetime import datetime, timedelta
 import requests
 import logging
 import os
@@ -315,8 +315,8 @@ with DAG(
     dag_id="wayfair_mock_ingestion",
     default_args=default_args,
     description="Daily ingestion of Wayfair mock API data into Iceberg raw layer",
-    schedule_interval="@daily",
-    start_date=days_ago(7),
+    schedule="@daily",
+    start_date=datetime(2024, 1, 1),
     catchup=True,
     tags=["datalens", "ingestion", "wayfair", "iceberg"],
     max_active_runs=1,

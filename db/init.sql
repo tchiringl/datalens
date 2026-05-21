@@ -1,14 +1,12 @@
 -- =============================================================================
 -- Retail AI Data Lens POC — PostgreSQL Seed File
 -- =============================================================================
--- Schemas: public (retail), airflow (metadata), openmetadata (metadata)
+-- Schemas: public (retail), airflow (metadata), nessie (Iceberg catalog)
 -- =============================================================================
 
 -- Create additional databases (run as superuser before connecting to each)
 CREATE DATABASE airflow;
-CREATE DATABASE openmetadata;
-CREATE DATABASE om_airflow;  -- dedicated DB for OpenMetadata ingestion Airflow instance
-CREATE DATABASE metastore;   -- dedicated DB for Apache Hive 4.0.1 standalone metastore
+CREATE DATABASE nessie;      -- dedicated DB for Project Nessie REST catalog (Iceberg)
 
 -- =============================================================================
 -- SCHEMA SETUP
