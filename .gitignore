@@ -13,6 +13,22 @@ dist/
 build/
 .pytest_cache/
 
+.env
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+.jpg
+
+
+
+
 # dbt
 dbt_project/target/
 dbt_project/dbt_packages/
@@ -46,3 +62,15 @@ api/profiling/reports/manifest.json
 openmetadata/ingestion/*.token
 
 CLAUDE.md
+
+.user.yml
+
+
+retail-dbt-poc/dbt_project/profiles.yml
+retail-dbt-poc/dbt_project/target/
+retail-dbt-poc/dbt_project/dbt_packages/
+retail-dbt-poc/dbt_project/logs/
+retail-dbt-poc/dbt_project/models/staging/schema.yml
+retail-dbt-poc/dbt_project/models/staging/schema.yml
+retail-dbt-poc/dbt_project/models/staging/sources.yml
+retail-dbt-poc/dbt_project/models/staging/*.sql

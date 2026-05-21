@@ -1,11 +1,10 @@
 # Retail dbt Test Generation POC
 
-Standalone POC inside the datalens project. Demonstrates auto-generating dbt tests from OpenMetadata schema using a local LLM (Ollama).
+Standalone POC inside the datalens project. Demonstrates auto-generating dbt tests from PostgreSQL schema using a local LLM (Ollama).
 
 ## Stack
 
-- **PostgreSQL 17** — retail data (~140K rows, 14 tables)
-- **OpenMetadata 1.5.x** — schema catalog and metadata extraction
+- **PostgreSQL 17** — retail data (~140K rows, 14 tables) and direct schema discovery
 - **Ollama** (`qwen2.5-coder:3b`) — local LLM for dbt test generation
 - **dbt-postgres** — direct PostgreSQL profile
 - **Jupyter** — pipeline orchestration and results preview
@@ -13,7 +12,7 @@ Standalone POC inside the datalens project. Demonstrates auto-generating dbt tes
 ## Quick Start
 
 ```bash
-# 1. Start services
+# 1. Start the database
 docker compose up -d
 
 # 2. Install Python deps
@@ -36,8 +35,6 @@ make dbt-docs
 | Service | URL |
 |---------|-----|
 | PostgreSQL | localhost:5435 |
-| OpenMetadata | http://localhost:8588 |
-| Elasticsearch | http://localhost:9202 |
 | Ollama | http://localhost:11434 |
 | dbt docs | http://localhost:8082 |
 

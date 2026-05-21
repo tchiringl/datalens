@@ -3,10 +3,45 @@ Utilities for generating dbt models and schema files from database metadata.
 """
 
 import os
-import yaml
+
 import psycopg2
 import psycopg2.extras
-from typing import Any
+import yaml
+
+
+def list_tables_with_columns(conn, schema: str = "public") -> list[dict]:
+    """Return table metadata from PostgreSQL in the same shape used by the notebook."""
+    tables: dict[str, dict] = {}
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT table_name, column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = %s
+            ORDER BY table_name, ordinal_position
+            """,
+            (schema,),
+        )
+        for row in cur.fetchall():
+            table_name = row["table_name"]
+            table_entry = tables.setdefault(
+                table_name,
+                {
+                    "name": table_name,
+                    "fqn": f"{schema}.{table_name}",
+                    "columns": [],
+                },
+            )
+            table_entry["columns"].append(
+                {
+                    "name": row["column_name"],
+                    "dataType": row["data_type"].upper(),
+                    "nullable": row["is_nullable"] == "YES",
+                }
+            )
+
+    return list(tables.values())
 
 
 def compute_column_stats(conn, table_name: str, columns: list[dict]) -> dict:
@@ -24,33 +59,62 @@ def compute_column_stats(conn, table_name: str, columns: list[dict]) -> dict:
             col_name = col["name"]
             col_type = col.get("dataType", "VARCHAR").upper()
 
-            col_stats = {"total_count": total, "null_count": 0, "null_rate": 0.0,
-                         "distinct_count": 0, "uniqueness_score": 0.0,
-                         "zero_count": None, "min_val": None, "max_val": None}
+            col_stats = {
+                "total_count": total,
+                "null_count": 0,
+                "null_rate": 0.0,
+                "distinct_count": 0,
+                "uniqueness_score": 0.0,
+                "zero_count": None,
+                "min_val": None,
+                "max_val": None,
+            }
 
             try:
                 # Null count
-                cur.execute(f'SELECT COUNT(*) as cnt FROM "{table_name}" WHERE "{col_name}" IS NULL')
+                cur.execute(
+                    f'SELECT COUNT(*) as cnt FROM "{table_name}" WHERE "{col_name}" IS NULL'
+                )
                 null_count = cur.fetchone()["cnt"]
                 col_stats["null_count"] = null_count
                 col_stats["null_rate"] = null_count / total if total > 0 else 0.0
 
                 # Distinct count
-                cur.execute(f'SELECT COUNT(DISTINCT "{col_name}") as cnt FROM "{table_name}"')
+                cur.execute(
+                    f'SELECT COUNT(DISTINCT "{col_name}") as cnt FROM "{table_name}"'
+                )
                 distinct_count = cur.fetchone()["cnt"]
                 col_stats["distinct_count"] = distinct_count
                 non_null_count = total - null_count
-                col_stats["uniqueness_score"] = distinct_count / non_null_count if non_null_count > 0 else 0.0
+                col_stats["uniqueness_score"] = (
+                    distinct_count / non_null_count if non_null_count > 0 else 0.0
+                )
 
                 # Numeric stats
-                numeric_types = {"INT", "INTEGER", "BIGINT", "SMALLINT", "NUMERIC", "DECIMAL",
-                                 "FLOAT", "REAL", "DOUBLE", "NUMBER", "INT4", "INT8", "FLOAT4", "FLOAT8"}
+                numeric_types = {
+                    "INT",
+                    "INTEGER",
+                    "BIGINT",
+                    "SMALLINT",
+                    "NUMERIC",
+                    "DECIMAL",
+                    "FLOAT",
+                    "REAL",
+                    "DOUBLE",
+                    "NUMBER",
+                    "INT4",
+                    "INT8",
+                    "FLOAT4",
+                    "FLOAT8",
+                }
                 is_numeric = any(t in col_type for t in numeric_types)
 
                 if is_numeric:
-                    cur.execute(f'SELECT MIN("{col_name}") as mn, MAX("{col_name}") as mx, '
-                                f'COUNT(*) FILTER (WHERE "{col_name}" = 0) as zeros '
-                                f'FROM "{table_name}"')
+                    cur.execute(
+                        f'SELECT MIN("{col_name}") as mn, MAX("{col_name}") as mx, '
+                        f'COUNT(*) FILTER (WHERE "{col_name}" = 0) as zeros '
+                        f'FROM "{table_name}"'
+                    )
                     row = cur.fetchone()
                     col_stats["min_val"] = row["mn"]
                     col_stats["max_val"] = row["mx"]
@@ -76,8 +140,12 @@ def get_sample_rows(conn, table_name: str, limit: int = 10) -> list[dict]:
         return []
 
 
-def generate_sources_yml(tables: list[str], source_name: str = "retail",
-                          schema: str = "public", database: str = "retail") -> str:
+def generate_sources_yml(
+    tables: list[str],
+    source_name: str = "retail",
+    schema: str = "public",
+    database: str = "retail",
+) -> str:
     """Generate dbt sources.yml content."""
     sources_dict = {
         "version": 2,
@@ -87,11 +155,15 @@ def generate_sources_yml(tables: list[str], source_name: str = "retail",
                 "description": "Raw retail data from PostgreSQL",
                 "database": database,
                 "schema": schema,
-                "tables": [{"name": t, "description": f"Raw {t} table"} for t in tables],
+                "tables": [
+                    {"name": t, "description": f"Raw {t} table"} for t in tables
+                ],
             }
-        ]
+        ],
     }
-    return yaml.dump(sources_dict, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return yaml.dump(
+        sources_dict, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
 
 
 def generate_staging_model(table_name: str, source_name: str = "retail") -> str:
@@ -116,11 +188,17 @@ def merge_schema_ymls(per_table_schemas: list[dict]) -> str:
             all_models.extend(schema_dict["models"])
 
     combined = {"version": 2, "models": all_models}
-    return yaml.dump(combined, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return yaml.dump(
+        combined, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
 
 
-def write_dbt_files(dbt_project_dir: str, tables: list[str],
-                    merged_schema_yml: str, source_name: str = "retail"):
+def write_dbt_files(
+    dbt_project_dir: str,
+    tables: list[str],
+    merged_schema_yml: str,
+    source_name: str = "retail",
+):
     """
     Write all generated dbt files to the project directory:
     - models/staging/sources.yml

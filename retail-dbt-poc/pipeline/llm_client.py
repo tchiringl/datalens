@@ -3,14 +3,19 @@ Ollama LLM client for dbt test generation.
 Uses qwen2.5-coder:3b via local Ollama REST API.
 """
 
-import json
+from typing import Optional
+
 import requests
 import yaml
-from typing import Optional
 
 
 class OllamaClient:
-    def __init__(self, host: str = "localhost", port: int = 11434, model: str = "qwen2.5-coder:3b"):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 11434,
+        model: str = "qwen2.5-coder:3b",
+    ):
         self.base_url = f"http://{host}:{port}"
         self.model = model
 
@@ -31,14 +36,16 @@ class OllamaClient:
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "num_predict": 2048,
-            }
+            },
         }
         resp = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=120)
         resp.raise_for_status()
         return resp.json().get("response", "")
 
 
-def build_prompt(table_name: str, columns: list[dict], stats: dict, sample_rows: list[dict]) -> str:
+def build_prompt(
+    table_name: str, columns: list[dict], stats: dict, sample_rows: list[dict]
+) -> str:
     """
     Build a prompt for dbt test generation.
 
@@ -49,8 +56,10 @@ def build_prompt(table_name: str, columns: list[dict], stats: dict, sample_rows:
         sample_rows: list of row dicts (up to 10)
     """
     # Build column info table
-    col_lines = ["| column | type | nullable | null_rate | uniqueness | distinct | zero_count | min | max |",
-                  "|--------|------|----------|-----------|------------|----------|------------|-----|-----|"]
+    col_lines = [
+        "| column | type | nullable | null_rate | uniqueness | distinct | zero_count | min | max |",
+        "|--------|------|----------|-----------|------------|----------|------------|-----|-----|",
+    ]
     for col in columns:
         cname = col["name"]
         st = stats.get(cname, {})
@@ -68,7 +77,9 @@ def build_prompt(table_name: str, columns: list[dict], stats: dict, sample_rows:
         sample_sep = "| " + " | ".join("---" for _ in headers) + " |"
         sample_data_lines = []
         for row in sample_rows[:10]:
-            sample_data_lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
+            sample_data_lines.append(
+                "| " + " | ".join(str(row.get(h, "")) for h in headers) + " |"
+            )
         sample_table = "\n".join([sample_header, sample_sep] + sample_data_lines)
     else:
         sample_table = "(no sample rows)"

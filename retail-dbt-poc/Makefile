@@ -36,7 +36,5 @@ dbt-docs:
 validate:
 	@echo "Checking PostgreSQL..."
 	@docker compose exec postgres pg_isready -U retail -d retail && echo "PostgreSQL OK" || echo "PostgreSQL FAIL"
-	@echo "Checking Elasticsearch..."
-	@curl -sf http://localhost:9202/_cluster/health > /dev/null && echo "Elasticsearch OK" || echo "Elasticsearch FAIL"
-	@echo "Checking OpenMetadata..."
-	@curl -sf http://localhost:8588/api/v1/system/status > /dev/null && echo "OpenMetadata OK" || echo "OpenMetadata FAIL"
+	@echo "Checking Ollama..."
+	@curl -sf http://localhost:11434/api/tags > /dev/null && echo "Ollama OK" || echo "Ollama FAIL"
