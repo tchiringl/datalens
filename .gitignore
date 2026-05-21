@@ -64,13 +64,12 @@ openmetadata/ingestion/*.token
 CLAUDE.md
 
 .user.yml
-
-
-retail-dbt-poc/dbt_project/profiles.yml
+# retail-dbt-poc/dbt_project/profiles.yml
 retail-dbt-poc/dbt_project/target/
 retail-dbt-poc/dbt_project/dbt_packages/
 retail-dbt-poc/dbt_project/logs/
-retail-dbt-poc/dbt_project/models/staging/schema.yml
-retail-dbt-poc/dbt_project/models/staging/schema.yml
-retail-dbt-poc/dbt_project/models/staging/sources.yml
-retail-dbt-poc/dbt_project/models/staging/*.sql
+# retail-dbt-poc/dbt_project/models/
+# dbt_project/models/
+
+
+

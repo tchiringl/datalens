@@ -14,12 +14,8 @@ clean-targets: ["target", "dbt_packages"]
 models:
   datalens_cdm:
     staging:
-      +materialized: table
+      +materialized: view
       +schema: staging
-    cdm:
-      +materialized: incremental
-      +schema: cdm
-      +on_schema_change: append_new_columns
-    marts:
+    profiling:
       +materialized: table
-      +schema: marts
+      +schema: profiling
