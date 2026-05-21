@@ -24,15 +24,16 @@ React/Vite (port 3000) ─► consumes FastAPI
 
 | Component | Technology | Version |
 |-----------|-----------|---------|
-| Query Engine | Trino | 460 |
-| Storage | MinIO + Apache Iceberg | RELEASE.2026-03-14T22-28-04Z (pinned — community archived Apr 2026) |
+| Query Engine | Trino | 481 |
+| Storage | MinIO + Apache Iceberg | RELEASE.2025-09-07T16-13-09Z (final community release per Docker Hub) |
 | Transform | dbt-trino | 1.9.2 |
-| Orchestration | Airflow | 2.10.5 |
-| Governance | OpenMetadata | 1.6.1 |
-| Search | Elasticsearch | 8.18.0 |
-| Database | PostgreSQL | 17 |
-| API | FastAPI + uvicorn | 0.115.0 |
-| Frontend | React 18.3 + Vite 5.4 + Tailwind CSS 3.4 | - |
+| Metastore | Apache Hive standalone metastore | 4.2.0 |
+| Orchestration | Airflow | 3.2.1 |
+| Governance | OpenMetadata | 1.12.8 |
+| Search | OpenSearch | 2.19.5 |
+| Database | PostgreSQL | 18.4-alpine |
+| API | FastAPI + uvicorn (Python 3.13-slim-bookworm) | 0.115.0 |
+| Frontend | React 18.3 + Vite 5.4 + Tailwind CSS 3.4 (Node 22-alpine3.23) | - |
 | UI Components | Radix UI + Recharts + React Query | - |
 
 ## Service URLs (local)
@@ -128,12 +129,18 @@ OM_USERNAME (default: admin), OM_PASSWORD (default: admin)
 
 ## Version Management
 
-All Docker service versions are pinned. When upgrading:
-- **MinIO CRITICAL**: Community edition archived April 25, 2026. Pinned to `RELEASE.2026-03-14T22-28-04Z`. Do NOT use `latest`.
-- **Airflow**: Stay on 2.x LTS (currently 2.10.5). Airflow 3.x has breaking API changes.
+All Docker service versions are pinned to the latest stable releases verified on Docker Hub (May 2026). When upgrading:
+- **MinIO**: Community edition `latest` points to `RELEASE.2025-09-07T16-13-09Z` (last community release on Docker Hub; no newer community tag has been published). Pin this tag — do not use `latest`.
+- **Airflow 3.x**: Now on `apache/airflow:3.2.1`. The `webserver` command was removed → use `api-server`. DAG parsing runs in a separate `dag-processor` process. FAB auth manager is opt-in via `AIRFLOW__CORE__AUTH_MANAGER`. Health endpoint moved to `/api/v2/version`.
+- **OpenMetadata 1.6 → 1.12 jump**: Major upgrade — runs a long DB migration on `openmetadata-server-init`. The `om_airflow` database schema is migrated by the bundled ingestion image; expect first-boot delays. Re-run `make bootstrap-om` after upgrade. If migrations fail, restore from a Postgres dump.
+- **PostgreSQL 18**: New major version. Airflow 3.2 + OM 1.12 officially support PG13–PG17; PG18 works in tests but is technically untested upstream. Roll back to `postgres:17-alpine` if either service fails its DB migration.
+- **Apache Hive 4.2.0**: Standalone metastore mode. The `hive-metastore-init` one-shot job runs `schematool -initSchema` against the `metastore` Postgres DB. Re-run only when wiping volumes.
+- **OpenSearch 2.19.5**: OM 1.12+ supports OpenSearch natively via `SEARCH_TYPE=opensearch`. Heap pinned at `-Xms256m -Xmx512m`.
 - **pandas**: Stay on 2.x (currently 2.2.3). pandas 3.0 has breaking changes.
 - **Vite**: Stay on 5.x (currently 5.4.11). Vite 8.x uses Rolldown (experimental).
 - **dbt**: `dbt-core==1.9.4`, `dbt-trino==1.9.2` — update together.
+- **Node 22 LTS**: Active LTS until Oct 2025; maintenance LTS until Apr 2027.
+- **Python 3.13**: Used by the API image. Stable, supported until Oct 2029.
 
 ## Development Notes
 
@@ -212,12 +219,16 @@ openmetadata/ingestion/
 ## Common Pitfalls
 
 - OpenMetadata takes ~2 min to start; health check may fail initially
-- Airflow needs `airflow-init` one-shot service to complete before webserver/scheduler
+- Airflow needs `airflow-init` one-shot service to complete before api-server/scheduler/dag-processor
+- **Airflow 3.x**: `airflow webserver` command is REMOVED. Use `airflow api-server` (compose uses the `airflow-apiserver` service). Health endpoint moved to `/api/v2/version`.
+- **Airflow 3.x DAG parsing** runs in a separate `dag-processor` process — compose has a dedicated `airflow-dag-processor` service.
+- **Hive metastore**: use `apache/hive:4.0.1` standalone metastore. Requires one-shot `schematool -initSchema` (the `hive-metastore-init` service in compose) before the main metastore starts. The `bitsondatadev/hive-metastore` image is abandonware and does NOT auto-initialize the schema (`MetaException: Version information not found in metastore.`).
+- **Search backend**: now OpenSearch 2.18.0 (was Elasticsearch). OpenMetadata 1.6+ supports it via `SEARCH_TYPE=opensearch`. Cuts ~500MB heap.
 - dbt profiles.yml points to internal Docker hostname `trino:8080`, not localhost
 - MinIO must initialize before Iceberg catalog works in Trino
 - `OM_USERNAME` must be `admin@open-metadata.org` — confirmed from `user_entity` table. OM login POST `/api/v1/users/login` requires email field (base64-encoded password)
 - `AIRFLOW_PORT` inside Docker network is `8080` (not `8082` which is host-only mapping)
-- `openmetadata-ingestion` must run both `airflow webserver` AND `airflow scheduler` — scheduler alone doesn't expose HTTP port 8080 that OM server needs for `PIPELINE_SERVICE_CLIENT_ENDPOINT`
+- `openmetadata-ingestion` must run both `airflow webserver` AND `airflow scheduler` — scheduler alone doesn't expose HTTP port 8080 that OM server needs for `PIPELINE_SERVICE_CLIENT_ENDPOINT`. NOTE: this image bundles its own Airflow 2.x — webserver command still works there.
 - Env var names: code reads `OM_USERNAME`/`OM_PASSWORD`; `.env` must use these exact names (not `OM_ADMIN_USER`/`OM_ADMIN_PASSWORD`)
 - `OM_PASSWORD` env var is now REQUIRED — no default. App fails to start without it.
 - `AIRFLOW_ADMIN_PASSWORD` env var is now REQUIRED — no default.
@@ -225,3 +236,5 @@ openmetadata/ingestion/
 - MinIO `latest` tag is dead (archived Apr 2026) — use pinned tag only.
 - ydata-profiling is removed. Assessment endpoints no longer exist. Use dbt profiling models.
 - dbt test failures now FAIL the Airflow DAG (no longer silently swallowed).
+- Trino catalog properties now reference MinIO creds via `${ENV:MINIO_ROOT_USER}` / `${ENV:MINIO_ROOT_PASSWORD}`; compose injects these vars into the trino service. No more hardcoded secrets in `infra/trino/catalog/*.properties`.
+- Every service has `deploy.resources.limits` (memory + cpus) — prevents one container's OOM from cascading. Estimated total cap: ~14GB across the stack.

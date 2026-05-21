@@ -3,7 +3,7 @@
 # to avoid resolution conflicts with the base image.
 
 # Trino Python DB-API driver (used by wayfair_mock_dag to INSERT into Iceberg)
-trino==0.328.0
+trino==0.336.0
 
 # Trino SQLAlchemy dialect
-trino[sqlalchemy]==0.328.0
+trino[sqlalchemy]==0.336.0

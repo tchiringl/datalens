@@ -11,7 +11,7 @@ datalens_trino:
       schema: cdm
       http_scheme: http
       session_properties:
-        query_max_run_time: 30m
+        query_max_run_time: 5d
     dev:
       type: trino
       method: none
@@ -22,4 +22,4 @@ datalens_trino:
       schema: cdm
       http_scheme: http
       session_properties:
-        query_max_run_time: 30m
+        query_max_run_time: 5d

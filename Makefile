@@ -81,3 +81,20 @@ status:
 ## Bootstrap OpenMetadata JWT tokens into ingestion configs (run after make up)
 bootstrap-om:
 	@bash scripts/bootstrap_om_tokens.sh
+
+
+## Start services in stages to prevent resource crashes
+up-staged:
+	@echo "1. Starting base infrastructure..."
+	docker compose up -d postgres minio elasticsearch
+	@echo "Waiting 20s for databases to initialize..."
+	@sleep 20
+	
+	@echo "2. Starting initialization jobs and metastores..."
+	docker compose up -d minio-init hive-metastore airflow-init openmetadata-server-init openmetadata-ingestion-init
+	@echo "Waiting 30s for migrations to run..."
+	@sleep 30
+	
+	@echo "3. Starting compute engines and web apps..."
+	docker compose up -d trino airflow-webserver airflow-scheduler openmetadata-server openmetadata-ingestion api frontend
+	@echo "Stack is coming up! Run 'make validate' in a few moments to check health."
