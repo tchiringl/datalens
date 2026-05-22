@@ -15,7 +15,7 @@ class OllamaClient:
         self,
         host: str = "localhost",
         port: int = 11434,
-        model: str = "qwen2.5-coder:3b",
+        model: str = "qwen2.5-coder:0.5b",
     ):
         self.base_url = f"http://{host}:{port}"
         self.model = model
@@ -131,43 +131,25 @@ def build_column_prompt(
     col: str,
     dtype: str,
     nullable: bool,
-    stats: dict,
     is_primary_key: bool = False,
     is_foreign_key: bool = False,
     references=None,
     table_columns: list[dict] = None,
-    samples: list = None,
+    data_dictionary: dict = None,
 ) -> str:
     """
-    Build per-column prompt for dbt-expectations + dbt-profiler test generation.
-    Tests derive ONLY from stats/metrics — never from specific sample values.
-    If samples provided, also requests data dictionary generation.
+    Build per-column prompt for dbt-expectations test generation.
+    Input: schema metadata only (columns, types, PK/FK, data dictionary).
+    No profiling stats — dbt_profiler runs separately after LLM.
     """
-    stats_json = json.dumps(stats or {}, default=str)
     table_cols_json = json.dumps(table_columns or [], default=str)
-
-    has_samples = bool(samples)
-    samples_section = (
-        f"\nsample_values (use ONLY for data_dictionary — NOT for test conditions):\n{json.dumps(samples, default=str)}\n"
-        if has_samples
+    dict_section = (
+        f"\n## Data dictionary (if available)\n{json.dumps(data_dictionary or {}, default=str)}\n"
+        if data_dictionary
         else ""
-    )
-    dict_key_doc = (
-        '- "data_dictionary": object with "description" (semantic meaning, 1-2 sentences) '
-        'and "value_semantics" (format/domain notes inferred from name, type, and samples)'
-        if has_samples
-        else '- "data_dictionary": null'
     )
 
     return f"""You are a dbt data-quality expert. Generate dbt-expectations tests for one column.
-
-## Project packages in use
-- **dbt_profiler** (data-mie/dbt_profiler): runs `dbt_profiler.profile('model_name')` on staging models
-  to produce per-column metrics — not_null_proportion, distinct_proportion, is_unique, min, max, avg,
-  std_deviation, median, distinct_count, null_count, row_count. Profiling is fully handled by this
-  package; you do NOT need to generate any profiling SQL or profiling config.
-- **dbt_expectations** (metaplane/dbt_expectations): the ONLY package to use for test generation.
-  The column stats below come directly from dbt_profiler output.
 
 ## Column context
 table: {table}
@@ -177,53 +159,38 @@ nullable: {nullable}
 is_primary_key: {is_primary_key}
 is_foreign_key: {is_foreign_key}
 references: {references}
-table_columns: {table_cols_json}
-
-## Column statistics (source: dbt_profiler)
-{stats_json}
-{samples_section}
+all_table_columns: {table_cols_json}
+{dict_section}
 ## Required output — valid JSON with exactly these keys:
 - "tests": array of objects, each with:
   - "test": full dbt-expectations test name (e.g. "dbt_expectations.expect_column_values_to_not_be_null")
   - "config": dict of test parameters (empty dict {{}} if none needed)
-  - "description": one line explaining why this test was chosen based on which metric triggered it
-{dict_key_doc}
+  - "description": one line explaining why this test was chosen
 - "rationale": one sentence on overall test selection
 
-## Strict rules
-1. Base ALL tests on dbt_profiler metric values and column name/type semantics — NEVER on specific observed sample values
-2. NEVER generate value-equality or value-in-list conditions derived from samples
-3. Do NOT output profiling SQL, profiling config, or profiling metric lists — dbt_profiler handles that automatically
-4. Use ONLY these dbt-expectations tests (pick applicable ones):
+## Rules
+1. Tests MUST be based on column name, data type, nullable flag, PK/FK semantics, and data dictionary — NOT on observed data values
+2. Do NOT generate profiling SQL or profiling config — dbt_profiler handles profiling separately
+3. Use ONLY these dbt-expectations tests (pick applicable ones):
    - dbt_expectations.expect_column_values_to_not_be_null
-     → when: not_null_proportion == 1.0 (or null_rate == 0) AND nullable is False
+     → when: nullable is False
    - dbt_expectations.expect_column_values_to_be_unique
-     → when: is_unique == True OR uniqueness_score > 0.99 (config: {{}})
-   - dbt_expectations.expect_column_proportion_of_unique_values_to_be_between
-     → when: 0.5 < uniqueness_score <= 0.99 (config: min_value=round-down-to-0.05)
+     → when: is_primary_key is True, or column name implies uniqueness (email, code, sku, uuid)
    - dbt_expectations.expect_column_values_to_be_between
-     → numeric cols only; min_value/max_value from dbt_profiler min/max with 10% outward buffer;
-       force min_value=0 for amount/price/qty/balance/total columns
-   - dbt_expectations.expect_column_mean_to_be_between
-     → numeric metric cols (amount, price, salary, quantity, total, balance);
-       derive bounds from avg ± 2*std_deviation when both are in stats
-   - dbt_expectations.expect_column_stdev_to_be_between
-     → numeric metric cols when std_deviation is available; config min_value=0
+     → numeric cols only; use domain knowledge (percentage→0-100, price→0+, age→0-150, quantity→0+)
    - dbt_expectations.expect_column_values_to_match_regex
-     → infer from column name: email→RFC5321, phone→digits+separators, postal_code→\\d{{5}}, date-string→ISO8601
+     → email→RFC5321, phone→digits+separators, postal_code→\\d{5}, date-string→ISO8601
    - dbt_expectations.expect_column_values_to_be_in_set
-     → ONLY when distinct_count < 10 AND column name implies status/category/type/flag
-       AND column is NOT a name/free-text/description column
-     → infer the value set from column name semantics (e.g. status→['active','inactive','pending'])
-       NOT from observed sample values
-5. For primary keys: always add not_null + unique
-6. For foreign keys: add not_null only; skip unique
-7. Skip not_null if not_null_proportion < 1.0 (or null_rate > 0)
-8. Skip unique if uniqueness_score < 0.99
+     → ONLY when column name implies a fixed enum (status/type/tier/flag);
+       infer value set from column name semantics only (e.g. is_active→[true,false])
+   - dbt_expectations.expect_column_value_lengths_to_be_between
+     → string cols with known length bounds from dtype (e.g. varchar(3)→max_value=3) or domain
+4. For primary keys: always add not_null + unique
+5. For foreign keys: add not_null; skip unique unless column name implies it
+6. For nullable=True columns: skip not_null
 
 Output ONLY the JSON object. No markdown fences, no explanation outside the JSON.
 """
-
 
 def build_table_dict_prompt(
     table: str,
@@ -285,6 +252,125 @@ Output ONLY the JSON object.
 """
 
 
+_METRIC_KEYWORDS = {
+    "amount",
+    "price",
+    "salary",
+    "quantity",
+    "total",
+    "balance",
+    "subtotal",
+    "revenue",
+    "cost",
+    "fee",
+    "tax",
+    "discount",
+}
+_NUMERIC_TYPES = {
+    "int",
+    "integer",
+    "bigint",
+    "smallint",
+    "numeric",
+    "decimal",
+    "float",
+    "double",
+    "real",
+    "number",
+}
+
+
+def _infer_regex_pattern(col: str) -> Optional[str]:
+    c = col.lower()
+    if "email" in c:
+        return "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+    if "phone" in c:
+        return "^[0-9\\-\\+\\(\\)\\s]{7,20}$"
+    if "postal" in c or "zip" in c:
+        return "^[0-9]{5}(-[0-9]{4})?$"
+    if c in ("uuid", "guid") or c.endswith("_uuid") or c.endswith("_guid"):
+        return "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    return None
+
+
+def fill_test_configs(
+    col: str,
+    dtype: str,
+) -> callable:
+    """
+    Post-process LLM test list: validate structure, infer missing regex patterns,
+    drop tests that require config the LLM didn't provide.
+    No stats dependency — purely schema/name-based filtering.
+    """
+    col_lower = col.lower()
+    is_numeric = any(t in dtype.lower() for t in _NUMERIC_TYPES)
+
+    def _process(tests: list[dict]) -> list[dict]:
+        result = []
+        seen = set()
+        for t in tests:
+            name = t.get("test", "")
+            if not name or name in seen:
+                continue
+            cfg = dict(t.get("config") or {})
+
+            if name == "dbt_expectations.expect_column_values_to_not_be_null":
+                result.append({"test": name, "config": {}})
+
+            elif name == "dbt_expectations.expect_column_values_to_be_unique":
+                result.append({"test": name, "config": {}})
+
+            elif name == "dbt_expectations.expect_column_proportion_of_unique_values_to_be_between":
+                if not cfg.get("min_value"):
+                    continue  # no config from LLM — skip
+                result.append({"test": name, "config": cfg})
+
+            elif name == "dbt_expectations.expect_column_values_to_be_between":
+                if not is_numeric:
+                    continue
+                if not cfg.get("min_value") and not cfg.get("max_value"):
+                    continue  # LLM must provide bounds for this test
+                result.append({"test": name, "config": cfg})
+
+            elif name == "dbt_expectations.expect_column_mean_to_be_between":
+                if not (is_numeric and cfg.get("min_value") is not None):
+                    continue
+                result.append({"test": name, "config": cfg})
+
+            elif name == "dbt_expectations.expect_column_stdev_to_be_between":
+                if not is_numeric:
+                    continue
+                if not cfg.get("min_value") and not cfg.get("max_value"):
+                    cfg = {"min_value": 0}
+                result.append({"test": name, "config": cfg})
+
+            elif name == "dbt_expectations.expect_column_values_to_match_regex":
+                if not cfg.get("pattern"):
+                    pattern = _infer_regex_pattern(col)
+                    if not pattern:
+                        continue
+                    cfg = {"pattern": pattern}
+                result.append({"test": name, "config": cfg})
+
+            elif name == "dbt_expectations.expect_column_values_to_be_in_set":
+                value_set = cfg.get("value_set") or cfg.get("values") or []
+                if not value_set:
+                    continue
+                result.append({"test": name, "config": {"value_set": value_set}})
+
+            elif name == "dbt_expectations.expect_column_value_lengths_to_be_between":
+                if not cfg.get("min_value") and not cfg.get("max_value"):
+                    continue
+                result.append({"test": name, "config": cfg})
+
+            else:
+                result.append({"test": name, "config": cfg})
+
+            seen.add(name)
+        return result
+
+    return _process
+
 def _clean_json_escapes(text: str) -> str:
     """
     Fix common LLM JSON errors: unescaped backslashes in string values
@@ -292,9 +378,10 @@ def _clean_json_escapes(text: str) -> str:
     Only fixes inside JSON string values, not structural characters.
     """
     import re
+
     # Replace lone backslashes not followed by valid JSON escape chars
     # Valid: \" \\ \/ \b \f \n \r \t \uXXXX
-    return re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+    return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
 
 
 def parse_column_output(raw: str) -> Optional[dict]:
@@ -304,6 +391,7 @@ def parse_column_output(raw: str) -> Optional[dict]:
     Returns dict or None.
     """
     import re
+
     text = raw.strip()
 
     # Strip markdown fences (handles ```json, ```yaml, ``` with optional trailing whitespace)

@@ -5,7 +5,7 @@ Standalone POC inside the datalens project. Demonstrates auto-generating dbt tes
 ## Stack
 
 - **PostgreSQL 17** — retail data (~140K rows, 14 tables) and direct schema discovery
-- **Ollama** (`qwen2.5-coder:3b`) — local LLM for dbt test generation
+- **Ollama** (`qwen2.5-coder:0.5b`) — local LLM for dbt test generation
 - **dbt-postgres** — direct PostgreSQL profile
 - **Jupyter** — pipeline orchestration and results preview
 

@@ -44,91 +44,6 @@ def list_tables_with_columns(conn, schema: str = "public") -> list[dict]:
     return list(tables.values())
 
 
-def compute_column_stats(conn, table_name: str, columns: list[dict]) -> dict:
-    """
-    Compute per-column statistics: null_count, distinct_count, zero_count, min/max.
-    Returns dict: col_name -> stats_dict
-    """
-    stats = {}
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        # Get total count once
-        cur.execute(f'SELECT COUNT(*) as total FROM "{table_name}"')
-        total = cur.fetchone()["total"]
-
-        for col in columns:
-            col_name = col["name"]
-            col_type = col.get("dataType", "VARCHAR").upper()
-
-            col_stats = {
-                "total_count": total,
-                "null_count": 0,
-                "null_rate": 0.0,
-                "distinct_count": 0,
-                "uniqueness_score": 0.0,
-                "zero_count": None,
-                "min_val": None,
-                "max_val": None,
-            }
-
-            try:
-                # Null count
-                cur.execute(
-                    f'SELECT COUNT(*) as cnt FROM "{table_name}" WHERE "{col_name}" IS NULL'
-                )
-                null_count = cur.fetchone()["cnt"]
-                col_stats["null_count"] = null_count
-                col_stats["null_rate"] = null_count / total if total > 0 else 0.0
-
-                # Distinct count
-                cur.execute(
-                    f'SELECT COUNT(DISTINCT "{col_name}") as cnt FROM "{table_name}"'
-                )
-                distinct_count = cur.fetchone()["cnt"]
-                col_stats["distinct_count"] = distinct_count
-                non_null_count = total - null_count
-                col_stats["uniqueness_score"] = (
-                    distinct_count / non_null_count if non_null_count > 0 else 0.0
-                )
-
-                # Numeric stats
-                numeric_types = {
-                    "INT",
-                    "INTEGER",
-                    "BIGINT",
-                    "SMALLINT",
-                    "NUMERIC",
-                    "DECIMAL",
-                    "FLOAT",
-                    "REAL",
-                    "DOUBLE",
-                    "NUMBER",
-                    "INT4",
-                    "INT8",
-                    "FLOAT4",
-                    "FLOAT8",
-                }
-                is_numeric = any(t in col_type for t in numeric_types)
-
-                if is_numeric:
-                    cur.execute(
-                        f'SELECT MIN("{col_name}") as mn, MAX("{col_name}") as mx, '
-                        f'COUNT(*) FILTER (WHERE "{col_name}" = 0) as zeros '
-                        f'FROM "{table_name}"'
-                    )
-                    row = cur.fetchone()
-                    col_stats["min_val"] = row["mn"]
-                    col_stats["max_val"] = row["mx"]
-                    col_stats["zero_count"] = row["zeros"]
-
-            except Exception as e:
-                print(f"  Warning: stats failed for {table_name}.{col_name}: {e}")
-                conn.rollback()
-
-            stats[col_name] = col_stats
-
-    return stats
-
-
 def get_sample_rows(conn, table_name: str, limit: int = 10) -> list[dict]:
     """Fetch sample rows from a table."""
     try:
@@ -191,6 +106,138 @@ def merge_schema_ymls(per_table_schemas: list[dict]) -> str:
     return yaml.dump(
         combined, default_flow_style=False, sort_keys=False, allow_unicode=True
     )
+
+
+def write_staging_models(
+    dbt_project_dir: str,
+    tables: list[str],
+    source_name: str = "retail",
+):
+    """
+    Write staging SQL models and sources.yml — NO schema.yml.
+    Run this BEFORE dbt_profiler so staging views exist when profiling runs.
+    schema.yml (LLM-generated tests) is written separately by write_schema_yml()
+    after profiler stats are available.
+    """
+    staging_dir = os.path.join(dbt_project_dir, "models", "staging")
+    os.makedirs(staging_dir, exist_ok=True)
+
+    sources_path = os.path.join(staging_dir, "sources.yml")
+    with open(sources_path, "w") as f:
+        f.write(generate_sources_yml(tables, source_name))
+    print(f"  Written: {sources_path}")
+
+    for table in tables:
+        model_path = os.path.join(staging_dir, f"stg_{table}.sql")
+        with open(model_path, "w") as f:
+            f.write(generate_staging_model(table, source_name))
+        print(f"  Written: {model_path}")
+
+
+def write_profiling_models(
+    dbt_project_dir: str,
+    tables: list[str],
+) -> list[dict]:
+    """
+    Write models/profiling/profile_stg_{table}.sql and schema.yml.
+    Each model calls dbt_profiler.get_profile() — dbt_profiler v1.0.0+ API.
+    Returns list of {name, description} entries for the caller if needed.
+    """
+    profiling_dir = os.path.join(dbt_project_dir, "models", "profiling")
+    os.makedirs(profiling_dir, exist_ok=True)
+
+    entries = []
+    for table in tables:
+        model_name = f"stg_{table}"
+        profile_model_name = f"profile_{model_name}"
+        # {{ and }} in Python strings produce literal { and } — required to emit
+        # Jinja expression syntax {{ ... }} that dbt expects.
+        sql_content = (
+            "{{{{ config(materialized='table', schema='profiling') }}}}\n\n"
+            "{{{{ dbt_profiler.get_profile(relation=ref('{}')) }}}}\n"
+        ).format(model_name)
+        sql_path = os.path.join(profiling_dir, f"{profile_model_name}.sql")
+        with open(sql_path, "w") as f:
+            f.write(sql_content)
+        print(f"  Written: {sql_path}")
+        entries.append(
+            {
+                "name": profile_model_name,
+                "description": f"dbt_profiler column-level profile for {model_name}",
+            }
+        )
+
+    schema_doc = {"version": 2, "models": entries}
+    schema_path = os.path.join(profiling_dir, "schema.yml")
+    with open(schema_path, "w") as f:
+        yaml.dump(schema_doc, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    print(f"  Written: {schema_path}")
+    return entries
+
+
+def write_schema_yml(dbt_project_dir: str, merged_schema_yml: str):
+    """Write models/staging/schema.yml (LLM-generated tests). Call after LLM step."""
+    staging_dir = os.path.join(dbt_project_dir, "models", "staging")
+    os.makedirs(staging_dir, exist_ok=True)
+    schema_path = os.path.join(staging_dir, "schema.yml")
+    with open(schema_path, "w") as f:
+        f.write(merged_schema_yml)
+    print(f"  Written: {schema_path}")
+
+
+def load_profiler_stats(
+    conn,
+    tables: list[str],
+    profiling_schema: str = "profiling",
+) -> dict:
+    """
+    Query dbt_profiler output tables and return stats in the same shape as
+    compute_column_stats() — {table: {col: {metric: value}}}.
+
+    dbt_profiler profile table columns:
+      column_name, data_type, row_count, not_null_proportion, distinct_proportion,
+      is_unique, min, max, avg, std_deviation, median, profiled_at
+
+    Falls back to empty dict per table if the profiler table doesn't exist yet.
+    """
+    all_stats = {}
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        for table in tables:
+            profile_table = f'profile_stg_{table}'
+            try:
+                cur.execute(
+                    f'SELECT * FROM "{profiling_schema}"."{profile_table}"'
+                )
+                rows = cur.fetchall()
+            except Exception:
+                conn.rollback()
+                all_stats[table] = {}
+                continue
+
+            table_stats = {}
+            for row in rows:
+                col = row["column_name"]
+                not_null_prop = float(row.get("not_null_proportion") or 0)
+                total = int(row.get("row_count") or 0)
+                distinct_prop = float(row.get("distinct_proportion") or 0)
+                table_stats[col] = {
+                    "total_count":      total,
+                    "null_count":       round((1 - not_null_prop) * total),
+                    "null_rate":        round(1 - not_null_prop, 6),
+                    "not_null_proportion": not_null_prop,
+                    "distinct_count":   round(distinct_prop * total),
+                    "distinct_proportion": distinct_prop,
+                    "uniqueness_score": float(row.get("distinct_proportion") or 0),
+                    "is_unique":        bool(row.get("is_unique")),
+                    "min_val":          row.get("min"),
+                    "max_val":          row.get("max"),
+                    "mean":             row.get("avg"),
+                    "std_deviation":    row.get("std_deviation"),
+                    "median":           row.get("median"),
+                    "zero_count":       None,
+                }
+            all_stats[table] = table_stats
+    return all_stats
 
 
 def write_dbt_files(
