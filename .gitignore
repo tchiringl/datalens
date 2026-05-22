@@ -74,3 +74,4 @@ retail-dbt-poc/dbt_project/logs/
 
 
 retail-dbt-poc/dbt_project/expectations/
+retail-dbt-poc/dbt_project/models/profiling/*.sql

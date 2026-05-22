@@ -1,0 +1,30 @@
+version: 2
+models:
+- name: profile_stg_customers
+  description: dbt_profiler column-level profile for stg_customers
+- name: profile_stg_employees
+  description: dbt_profiler column-level profile for stg_employees
+- name: profile_stg_inventory_snapshots
+  description: dbt_profiler column-level profile for stg_inventory_snapshots
+- name: profile_stg_loyalty_points
+  description: dbt_profiler column-level profile for stg_loyalty_points
+- name: profile_stg_order_items
+  description: dbt_profiler column-level profile for stg_order_items
+- name: profile_stg_orders
+  description: dbt_profiler column-level profile for stg_orders
+- name: profile_stg_product_categories
+  description: dbt_profiler column-level profile for stg_product_categories
+- name: profile_stg_product_reviews
+  description: dbt_profiler column-level profile for stg_product_reviews
+- name: profile_stg_products
+  description: dbt_profiler column-level profile for stg_products
+- name: profile_stg_promotions
+  description: dbt_profiler column-level profile for stg_promotions
+- name: profile_stg_returns
+  description: dbt_profiler column-level profile for stg_returns
+- name: profile_stg_shipments
+  description: dbt_profiler column-level profile for stg_shipments
+- name: profile_stg_stores
+  description: dbt_profiler column-level profile for stg_stores
+- name: profile_stg_suppliers
+  description: dbt_profiler column-level profile for stg_suppliers
