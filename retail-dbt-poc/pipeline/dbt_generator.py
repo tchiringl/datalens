@@ -170,7 +170,9 @@ def write_profiling_models(
     schema_doc = {"version": 2, "models": entries}
     schema_path = os.path.join(profiling_dir, "schema.yml")
     with open(schema_path, "w") as f:
-        yaml.dump(schema_doc, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.dump(
+            schema_doc, f, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
     print(f"  Written: {schema_path}")
     return entries
 
@@ -191,23 +193,32 @@ def load_profiler_stats(
     profiling_schema: str = "profiling",
 ) -> dict:
     """
-    Query dbt_profiler output tables and return stats in the same shape as
-    compute_column_stats() — {table: {col: {metric: value}}}.
+    Query dbt_profiler output tables.  Returns {table: {col: metrics_dict}}.
 
-    dbt_profiler profile table columns:
-      column_name, data_type, row_count, not_null_proportion, distinct_proportion,
-      is_unique, min, max, avg, std_deviation, median, profiled_at
+    All raw dbt_profiler columns are preserved as-is.  Derived metrics are
+    layered on top so callers get a single unified dict per column:
 
-    Falls back to empty dict per table if the profiler table doesn't exist yet.
+    Raw (dbt_profiler v1.0.0):
+      data_type, row_count, not_null_proportion, distinct_proportion,
+      distinct_count, is_unique, min, max, avg, median,
+      std_dev_population, std_dev_sample, profiled_at
+
+    Derived (computed here):
+      total_count       — int alias for row_count
+      null_proportion   — 1 - not_null_proportion
+      null_count        — round(null_proportion * row_count)
+      null_rate         — alias for null_proportion (backward compat)
+      uniqueness_score  — alias for distinct_proportion (backward compat)
+      min_val / max_val — aliases for min / max
+      mean              — alias for avg
+      cv                — coefficient of variation: std_dev_sample / avg
     """
     all_stats = {}
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         for table in tables:
-            profile_table = f'profile_stg_{table}'
+            profile_table = f"profile_stg_{table}"
             try:
-                cur.execute(
-                    f'SELECT * FROM "{profiling_schema}"."{profile_table}"'
-                )
+                cur.execute(f'SELECT * FROM "{profiling_schema}"."{profile_table}"')
                 rows = cur.fetchall()
             except Exception:
                 conn.rollback()
@@ -217,24 +228,39 @@ def load_profiler_stats(
             table_stats = {}
             for row in rows:
                 col = row["column_name"]
-                not_null_prop = float(row.get("not_null_proportion") or 0)
+
+                # all raw profiler columns except the key itself
+                raw = {k: v for k, v in row.items() if k != "column_name"}
+
+                # safe numeric extractions for derivation
                 total = int(row.get("row_count") or 0)
+                not_null_prop = float(row.get("not_null_proportion") or 0)
                 distinct_prop = float(row.get("distinct_proportion") or 0)
+                avg_val = row.get("avg")
+                std_dev_s = row.get("std_dev_sample")
+
+                null_prop = round(1 - not_null_prop, 6)
+
+                cv = None
+                if avg_val is not None and std_dev_s is not None:
+                    try:
+                        avg_f = float(avg_val)
+                        std_f = float(std_dev_s)
+                        if avg_f != 0:
+                            cv = round(std_f / avg_f, 4)
+                    except (TypeError, ValueError):
+                        pass
+
                 table_stats[col] = {
-                    "total_count":      total,
-                    "null_count":       round((1 - not_null_prop) * total),
-                    "null_rate":        round(1 - not_null_prop, 6),
-                    "not_null_proportion": not_null_prop,
-                    "distinct_count":   round(distinct_prop * total),
-                    "distinct_proportion": distinct_prop,
-                    "uniqueness_score": float(row.get("distinct_proportion") or 0),
-                    "is_unique":        bool(row.get("is_unique")),
-                    "min_val":          row.get("min"),
-                    "max_val":          row.get("max"),
-                    "mean":             row.get("avg"),
-                    "std_deviation":    row.get("std_deviation"),
-                    "median":           row.get("median"),
-                    "zero_count":       None,
+                    # raw profiler output (all columns)
+                    **raw,
+                    # derived / aliased metrics
+                    "total_count": total,
+                    "null_proportion": null_prop,
+                    "null_count": round(null_prop * total),
+                    "null_rate": null_prop,  # backward compat alias
+                    "uniqueness_score": distinct_prop,  # backward compat alias
+                    "cv": cv,  # coefficient of variation
                 }
             all_stats[table] = table_stats
     return all_stats

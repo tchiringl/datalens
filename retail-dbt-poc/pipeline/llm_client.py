@@ -4,7 +4,7 @@ Uses qwen2.5-coder:3b via local Ollama REST API.
 """
 
 import json
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 import yaml
@@ -134,20 +134,44 @@ def build_column_prompt(
     is_primary_key: bool = False,
     is_foreign_key: bool = False,
     references=None,
-    table_columns: list[dict] = None,
-    data_dictionary: dict = None,
+    table_columns: Optional[list[dict]] = None,
+    data_dictionary: Optional[dict] = None,
+    table_data_dictionary: Optional[dict] = None,
 ) -> str:
     """
     Build per-column prompt for dbt-expectations test generation.
     Input: schema metadata only (columns, types, PK/FK, data dictionary).
     No profiling stats — dbt_profiler runs separately after LLM.
+
+    table_data_dictionary: full table dict from LLM dict step — includes table
+      description and all column descriptions/semantics for cross-column context.
+    data_dictionary: per-column dict entry (description + semantics) for focus.
     """
     table_cols_json = json.dumps(table_columns or [], default=str)
-    dict_section = (
-        f"\n## Data dictionary (if available)\n{json.dumps(data_dictionary or {}, default=str)}\n"
-        if data_dictionary
-        else ""
-    )
+
+    # Full table data dictionary — all columns with descriptions and semantics
+    table_dict_section = ""
+    if table_data_dictionary and isinstance(table_data_dictionary, dict):
+        table_desc = table_data_dictionary.get("description", "")
+        all_col_dicts = table_data_dictionary.get("columns") or {}
+        col_lines = []
+        for c_name, c_info in all_col_dicts.items():
+            marker = " ← THIS COLUMN" if c_name == col else ""
+            desc = c_info.get("description", "")
+            sem  = c_info.get("semantics", "")
+            col_lines.append(f"  {c_name}{marker}: {desc} | semantics: {sem}")
+        table_dict_section = (
+            f"\n## Table data dictionary\n"
+            f"table_description: {table_desc}\n"
+            + "\n".join(col_lines)
+            + "\n"
+        )
+    elif data_dictionary and isinstance(data_dictionary, dict):
+        # Fallback: per-column dict only
+        table_dict_section = (
+            f"\n## Column data dictionary\n"
+            f"{json.dumps(data_dictionary, default=str)}\n"
+        )
 
     return f"""You are a dbt data-quality expert. Generate dbt-expectations tests for one column.
 
@@ -160,7 +184,7 @@ is_primary_key: {is_primary_key}
 is_foreign_key: {is_foreign_key}
 references: {references}
 all_table_columns: {table_cols_json}
-{dict_section}
+{table_dict_section}
 ## Required output — valid JSON with exactly these keys:
 - "tests": array of objects, each with:
   - "test": full dbt-expectations test name (e.g. "dbt_expectations.expect_column_values_to_not_be_null")
@@ -182,12 +206,13 @@ all_table_columns: {table_cols_json}
      → email→RFC5321, phone→digits+separators, postal_code→\\d{5}, date-string→ISO8601
    - dbt_expectations.expect_column_values_to_be_in_set
      → ONLY when column name implies a fixed enum (status/type/tier/flag);
-       infer value set from column name semantics only (e.g. is_active→[true,false])
+       use semantics from data dictionary to infer the value set
    - dbt_expectations.expect_column_value_lengths_to_be_between
      → string cols with known length bounds from dtype (e.g. varchar(3)→max_value=3) or domain
 4. For primary keys: always add not_null + unique
 5. For foreign keys: add not_null; skip unique unless column name implies it
 6. For nullable=True columns: skip not_null
+7. Use data dictionary semantics to choose value sets for enum columns and bounds for numeric columns
 
 Output ONLY the JSON object. No markdown fences, no explanation outside the JSON.
 """
@@ -252,20 +277,6 @@ Output ONLY the JSON object.
 """
 
 
-_METRIC_KEYWORDS = {
-    "amount",
-    "price",
-    "salary",
-    "quantity",
-    "total",
-    "balance",
-    "subtotal",
-    "revenue",
-    "cost",
-    "fee",
-    "tax",
-    "discount",
-}
 _NUMERIC_TYPES = {
     "int",
     "integer",
@@ -296,13 +307,12 @@ def _infer_regex_pattern(col: str) -> Optional[str]:
 def fill_test_configs(
     col: str,
     dtype: str,
-) -> callable:
+) -> Callable:
     """
     Post-process LLM test list: validate structure, infer missing regex patterns,
     drop tests that require config the LLM didn't provide.
     No stats dependency — purely schema/name-based filtering.
     """
-    col_lower = col.lower()
     is_numeric = any(t in dtype.lower() for t in _NUMERIC_TYPES)
 
     def _process(tests: list[dict]) -> list[dict]:
@@ -388,6 +398,7 @@ def parse_column_output(raw: str) -> Optional[dict]:
     """
     Parse JSON from per-column LLM response.
     Strips markdown fences and fixes invalid backslash escapes.
+    Normalises array responses (LLM returns [...] instead of {tests:[...]}).
     Returns dict or None.
     """
     import re
@@ -401,10 +412,20 @@ def parse_column_output(raw: str) -> Optional[dict]:
             lines.pop()
         text = "\n".join(lines).strip()
 
-    # Try parse as-is, then with escape fix, then with regex extraction
+    def _normalise(parsed) -> Optional[dict]:
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            # LLM returned array of test objects directly — wrap it
+            return {"tests": parsed, "rationale": ""}
+        return None
+
+    # Try parse as-is, then with escape fix
     for candidate in [text, _clean_json_escapes(text)]:
         try:
-            return json.loads(candidate)
+            result = _normalise(json.loads(candidate))
+            if result is not None:
+                return result
         except json.JSONDecodeError:
             pass
 
@@ -413,7 +434,20 @@ def parse_column_output(raw: str) -> Optional[dict]:
     if m:
         for candidate in [m.group(1), _clean_json_escapes(m.group(1))]:
             try:
-                return json.loads(candidate)
+                result = _normalise(json.loads(candidate))
+                if result is not None:
+                    return result
+            except json.JSONDecodeError:
+                pass
+
+    # Regex extract outermost JSON array (fallback for bare array with no object wrapper)
+    m = re.search(r"(\[.*\])", text, re.S)
+    if m:
+        for candidate in [m.group(1), _clean_json_escapes(m.group(1))]:
+            try:
+                result = _normalise(json.loads(candidate))
+                if result is not None:
+                    return result
             except json.JSONDecodeError:
                 pass
 
