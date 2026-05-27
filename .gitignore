@@ -76,3 +76,6 @@ retail-dbt-poc/dbt_project/logs/
 retail-dbt-poc/dbt_project/expectations/
 retail-dbt-poc/dbt_project/models/
 *.png
+AGENTS.md
+skills/
+.github/
